@@ -1,0 +1,93 @@
+[
+  {
+    "hs_code": "95030090",
+    "description": "Tricycles, scooters, pedal cars and similar wheeled toys; dolls' carriages; dolls; other toys; reduced-size (scale) models and similar recreational models, working or not; puzzles of all kinds; handcrafted wooden toys and Channapatna lacquerware toys",
+    "chapter": "95",
+    "chapter_title": "Toys, games and sports requisites; parts and accessories thereof",
+    "duty_rate": "20%"
+  },
+  {
+    "hs_code": "44201000",
+    "description": "Statuettes and other ornaments, of wood; wooden boxes, caskets and cases; handcrafted wooden carvings, figurines and decor",
+    "chapter": "44",
+    "chapter_title": "Wood and articles of wood; wood charcoal",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "74198030",
+    "description": "Artware of brass, handcrafted brass peacock diya oil lamps, brass idols, puja articles and decorative metalware",
+    "chapter": "74",
+    "chapter_title": "Copper and articles thereof (including brass artware)",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "69139000",
+    "description": "Statuettes and other ornamental ceramic articles; Jaipur Blue Pottery vases, glazed ceramic decorative ware",
+    "chapter": "69",
+    "chapter_title": "Ceramic products",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "50072010",
+    "description": "Woven fabrics of silk or of silk waste; handloom pure silk sarees, Banarasi silk, Kanjeevaram silk",
+    "chapter": "50",
+    "chapter_title": "Silk and silk textiles",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "62141000",
+    "description": "Shawls, scarves, mufflers, mantillas, veils and the like of silk or silk waste; Kashmiri hand-embroidered scarves",
+    "chapter": "62",
+    "chapter_title": "Articles of apparel and clothing accessories, not knitted or crocheted",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "09021010",
+    "description": "Green tea (not fermented) in immediate packings of a content not exceeding 3 kg; Darjeeling green tea, Assam organic tea",
+    "chapter": "09",
+    "chapter_title": "Coffee, tea, mate and spices",
+    "duty_rate": "100%"
+  },
+  {
+    "hs_code": "62052010",
+    "description": "Men's or boys' handloom shirts of cotton",
+    "chapter": "62",
+    "chapter_title": "Articles of apparel and clothing accessories, not knitted or crocheted",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "64035011",
+    "description": "Leather footwear with outer soles of leather for men, handcrafted Mojari and Jutti leather shoes",
+    "chapter": "64",
+    "chapter_title": "Footwear, gaiters and the like; parts of such articles",
+    "duty_rate": "15%"
+  },
+  {
+    "hs_code": "73239390",
+    "description": "Other household articles of stainless steel, for kitchen use",
+    "chapter": "73",
+    "chapter_title": "Articles of iron or steel",
+    "duty_rate": "7.5%"
+  },
+  {
+    "hs_code": "57011000",
+    "description": "Carpets and other textile floor coverings, knotted, whether or not made up, of wool or fine animal hair; Kashmiri hand-knotted carpets",
+    "chapter": "57",
+    "chapter_title": "Carpets and other textile floor coverings",
+    "duty_rate": "10%"
+  },
+  {
+    "hs_code": "71171990",
+    "description": "Imitation jewellery of base metal; handcrafted beaded necklaces, brass and terracotta jewellery",
+    "chapter": "71",
+    "chapter_title": "Natural or cultured pearls, precious stones, imitation jewellery",
+    "duty_rate": "15%"
+  },
+  {
+    "hs_code": "48239090",
+    "description": "Other paper, paperboard, cellulose wadding; handmade paper products, Madhubani folk art paintings on handmade sheet",
+    "chapter": "48",
+    "chapter_title": "Paper and paperboard; articles of paper pulp",
+    "duty_rate": "10%"
+  }
+]

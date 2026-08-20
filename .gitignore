@@ -1,0 +1,90 @@
+# =================================================================
+# DAK GHAR NIRYAT KENDRA (DNK) - MASTER .GITIGNORE
+# =================================================================
+
+# --- Environment & Secret Files (NEVER COMMIT REAL SECRETS) ---
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+!.env.*.example
+
+# --- Python Virtual Environments & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Node & Frontend Build Artifacts ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Next.js Cache & Output ---
+.next/
+out/
+
+# --- Expo & React Native Cache ---
+.expo/
+.expo-shared/
+web-build/
+
+# --- Generated PDFs & Documents ---
+generated_documents/*.pdf
+*.pdf
+
+# --- Local Vector DB Data & Locks ---
+**/data/qdrant_db/
+*.lock
+
+# --- Operating System & Editor Files ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.log
+*.tmp
+*.bak
+
+# --- Scratch / Temporary Files ---
+scratch/
+test_*.py
+!test_master_integration.py
+quick_*.py
+patch_*.py
+fix_*.py
+find_*.py
+list_*.py
+update_*.py
+# --- TypeScript Build Cache ---
+*.tsbuildinfo
