@@ -76,6 +76,7 @@ from auth import (
     get_current_user,
 )
 from cn23_generator import generate_cn23_pdf
+from app.api.customs.cn22 import router as cn22_router
 from icegate import router as icegate_router, submit_pbe_to_icegate, get_icegate_status, ICEGATEPBESubmit
 # ============================================================
 # FASTAPI APPLICATION
@@ -87,6 +88,7 @@ app = FastAPI(
     description="Backend API for export, compliance, escrow and logistics",
 )
 app.include_router(icegate_router)
+app.include_router(cn22_router, prefix="/api/v1")
 
 # ============================================================
 # CORS
@@ -2564,3 +2566,4 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
     )
+
