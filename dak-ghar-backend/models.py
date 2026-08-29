@@ -1,14 +1,16 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
-    Integer,
-    String,
+    Boolean,
     DateTime,
-    ForeignKey,
-    Text,
-    Numeric,
     Float,
+    ForeignKey,
+    Integer,
     JSON,
+    Numeric,
+    String,
+    Text,
 )
 
 from sqlalchemy.orm import (
@@ -92,6 +94,12 @@ class Product(Base):
         nullable=False
     )
 
+    # --------------------------------------------------------
+    # Legacy catalog fields
+    # --------------------------------------------------------
+    # Kept for compatibility with the existing integrated
+    # frontend/backend.
+
     title: Mapped[str] = mapped_column(
         String(200),
         nullable=False
@@ -107,6 +115,39 @@ class Product(Base):
         nullable=False
     )
 
+    # --------------------------------------------------------
+    # Unified multilingual catalog
+    # --------------------------------------------------------
+
+    title_en: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    title_hi: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    description_en: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    description_hi: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    category: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
+    # --------------------------------------------------------
+    # HS classification
+    # --------------------------------------------------------
+
     hs_code: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True
@@ -117,8 +158,109 @@ class Product(Base):
         nullable=True
     )
 
+    # --------------------------------------------------------
+    # Channel availability
+    # --------------------------------------------------------
+
+    is_d2c: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    is_b2b: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    is_export: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    # --------------------------------------------------------
+    # Channel-specific pricing
+    # --------------------------------------------------------
+
+    cost_price_inr: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    retail_price_inr: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    wholesale_price_inr: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    b2b_moq: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=10
+    )
+
+    b2b_bulk_discount_percentage: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True
+    )
+
+    export_price_usd: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    # --------------------------------------------------------
+    # Logistics
+    # --------------------------------------------------------
+
+    weight_grams: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True
+    )
+
+    length_cm: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True
+    )
+
+    width_cm: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True
+    )
+
+    height_cm: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True
+    )
+
+    is_fragile: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    # --------------------------------------------------------
+    # Images
+    # --------------------------------------------------------
+
     image_urls: Mapped[list | None] = mapped_column(
         JSON,
+        nullable=True
+    )
+
+    raw_image_url: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True
+    )
+
+    enhanced_image_url: Mapped[str | None] = mapped_column(
+        String(1000),
         nullable=True
     )
 
@@ -128,12 +270,23 @@ class Product(Base):
         nullable=True
     )
 
+    # --------------------------------------------------------
+    # Timestamp
+    # --------------------------------------------------------
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         nullable=False
     )
 
+    # --------------------------------------------------------
+    # Relationship
+    # --------------------------------------------------------
+
+    seller: Mapped["User"] = relationship(
+        back_populates="products"
+    )
 
 # ============================================================
 # ORDER

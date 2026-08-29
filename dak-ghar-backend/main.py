@@ -276,8 +276,10 @@ def get_products(
         .all()
     )
 
-    return products
-
+    return [
+        product_to_response(product)
+        for product in products
+    ]
 
 # ------------------------------------------------------------
 # CREATE PRODUCT
@@ -323,6 +325,73 @@ def calculate_title_similarity(t1: str, t2: str) -> float:
     return (2.0 * intersection) / (len(words1) + len(words2))
 
 
+def product_to_response(product: Product) -> ProductResponse:
+    """
+    Convert the flat SQLAlchemy Product model into the
+    nested ProductResponse API contract.
+    """
+
+    return ProductResponse(
+        id=product.id,
+        seller_id=product.seller_id,
+
+        # Legacy fields
+        title=product.title,
+        description=product.description,
+        price_inr=product.price_inr,
+        image_urls=product.image_urls,
+
+        # Unified multilingual catalog
+        title_en=product.title_en,
+        title_hi=product.title_hi,
+        description_en=product.description_en,
+        description_hi=product.description_hi,
+        category=product.category,
+
+        # HS classification
+        hs_code=product.hs_code,
+        hs_confidence=product.hs_confidence,
+
+        # Channels
+        channels={
+            "is_d2c": product.is_d2c,
+            "is_b2b": product.is_b2b,
+            "is_export": product.is_export,
+        },
+
+        # Pricing
+        pricing={
+            "cost_price_inr": product.cost_price_inr,
+            "retail_price_inr": product.retail_price_inr,
+            "wholesale_price_inr": product.wholesale_price_inr,
+            "b2b_moq": product.b2b_moq,
+            "b2b_bulk_discount_percentage": (
+                product.b2b_bulk_discount_percentage
+            ),
+            "export_price_usd": product.export_price_usd,
+        },
+
+        # Logistics
+        logistics={
+            "weight_grams": product.weight_grams,
+            "dimensions_cm": {
+                "length": product.length_cm,
+                "width": product.width_cm,
+                "height": product.height_cm,
+            },
+            "is_fragile": product.is_fragile,
+        },
+
+        # Images
+        images={
+            "raw_url": product.raw_image_url,
+            "enhanced_url": product.enhanced_image_url,
+        },
+
+        created_at=product.created_at,
+    )
+
+
 @app.post(
     "/api/v1/products",
     response_model=ProductResponse,
@@ -333,11 +402,31 @@ def create_product(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    raw_title = data.title or ""
-    normalized_title = re.sub(r"\s+", " ", raw_title.strip()).lower()
+    raw_title = data.title or data.title_en or ""
+
+    normalized_title = re.sub(
+        r"\s+",
+        " ",
+        raw_title.strip(),
+    ).lower()
+
     normalized_hs = (data.hs_code or "").strip()
-    new_img_hash = compute_image_hash(data.image_urls)
-    new_price = float(data.price_inr) if data.price_inr is not None else None
+
+    new_img_hash = compute_image_hash(
+        data.image_urls
+    )
+
+    resolved_price = (
+        data.price_inr
+        if data.price_inr is not None
+        else data.pricing.retail_price_inr
+    )
+
+    new_price = (
+        float(resolved_price)
+        if resolved_price is not None
+        else None
+    )
 
     if not normalized_title:
         raise HTTPException(
@@ -412,16 +501,84 @@ def create_product(
             )
 
     # ------------------------------------------------------------
+    # RESOLVE UNIFIED PRODUCT FIELDS
+    # ------------------------------------------------------------
+
+    resolved_title = data.title or data.title_en
+
+    if not resolved_title or not resolved_title.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Product title cannot be empty",
+        )
+
+    resolved_price = (
+        data.price_inr
+        if data.price_inr is not None
+        else data.pricing.retail_price_inr
+    )
+
+    if resolved_price is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Product price cannot be empty",
+        )
+
+    # ------------------------------------------------------------
     # PERSIST NEW PRODUCT TO DATABASE
     # ------------------------------------------------------------
+
     product = Product(
         seller_id=current_user.id,
-        title=re.sub(r"\s+", " ", raw_title.strip()),
-        description=data.description,
-        price_inr=data.price_inr,
+
+        # Legacy-compatible fields
+        title=re.sub(
+            r"\s+",
+            " ",
+            resolved_title.strip(),
+        ),
+        description=data.description or data.description_en,
+        price_inr=resolved_price,
+
+        # HS classification
         hs_code=data.hs_code,
         hs_confidence=data.hs_confidence,
+
+        # Unified multilingual catalog
+        title_en=data.title_en or data.title,
+        title_hi=data.title_hi,
+        description_en=data.description_en or data.description,
+        description_hi=data.description_hi,
+        category=data.category,
+
+        # Channel availability
+        is_d2c=data.channels.is_d2c,
+        is_b2b=data.channels.is_b2b,
+        is_export=data.channels.is_export,
+
+        # Channel-specific pricing
+        cost_price_inr=data.pricing.cost_price_inr,
+        retail_price_inr=data.pricing.retail_price_inr,
+        wholesale_price_inr=data.pricing.wholesale_price_inr,
+        b2b_moq=data.pricing.b2b_moq,
+        b2b_bulk_discount_percentage=(
+            data.pricing.b2b_bulk_discount_percentage
+        ),
+        export_price_usd=data.pricing.export_price_usd,
+
+        # Logistics
+        weight_grams=data.logistics.weight_grams,
+        length_cm=data.logistics.dimensions_cm.length,
+        width_cm=data.logistics.dimensions_cm.width,
+        height_cm=data.logistics.dimensions_cm.height,
+        is_fragile=data.logistics.is_fragile,
+
+        # Images
         image_urls=data.image_urls,
+        raw_image_url=data.images.raw_url,
+        enhanced_image_url=data.images.enhanced_url,
+
+        # Existing duplicate-detection hash
         primary_image_hash=new_img_hash,
     )
 
@@ -436,7 +593,7 @@ def create_product(
             detail="This product is already listed.",
         )
 
-    return product
+    return product_to_response(product)
 
 
 # ------------------------------------------------------------
@@ -463,7 +620,7 @@ def get_product(
             detail="Product not found",
         )
 
-    return product
+    return product_to_response(product)
 
 
 # ------------------------------------------------------------
@@ -503,13 +660,119 @@ def update_product(
         exclude_unset=True
     )
 
-    for field, value in update_data.items():
-        setattr(product, field, value)
+    # ------------------------------------------------------------
+    # UPDATE FLAT PRODUCT FIELDS
+    # ------------------------------------------------------------
+
+    flat_fields = {
+        "title",
+        "description",
+        "price_inr",
+        "image_urls",
+        "title_en",
+        "title_hi",
+        "description_en",
+        "description_hi",
+        "category",
+        "hs_code",
+        "hs_confidence",
+    }
+
+    for field in flat_fields:
+        if field in update_data:
+            setattr(
+                product,
+                field,
+                update_data[field],
+            )
+
+    # ------------------------------------------------------------
+    # UPDATE CHANNELS
+    # ------------------------------------------------------------
+
+    if "channels" in update_data:
+        channels = update_data["channels"]
+
+        for field in (
+            "is_d2c",
+            "is_b2b",
+            "is_export",
+        ):
+            if field in channels:
+                setattr(
+                    product,
+                    field,
+                    channels[field],
+                )
+
+    # ------------------------------------------------------------
+    # UPDATE PRICING
+    # ------------------------------------------------------------
+
+    if "pricing" in update_data:
+        pricing = update_data["pricing"]
+
+        pricing_fields = {
+            "cost_price_inr": "cost_price_inr",
+            "retail_price_inr": "retail_price_inr",
+            "wholesale_price_inr": "wholesale_price_inr",
+            "b2b_moq": "b2b_moq",
+            "b2b_bulk_discount_percentage": (
+                "b2b_bulk_discount_percentage"
+            ),
+            "export_price_usd": "export_price_usd",
+        }
+
+        for source_field, model_field in pricing_fields.items():
+            if source_field in pricing:
+                setattr(
+                    product,
+                    model_field,
+                    pricing[source_field],
+                )
+
+    # ------------------------------------------------------------
+    # UPDATE LOGISTICS
+    # ------------------------------------------------------------
+
+    if "logistics" in update_data:
+        logistics = update_data["logistics"]
+
+        if "weight_grams" in logistics:
+            product.weight_grams = logistics["weight_grams"]
+
+        if "is_fragile" in logistics:
+            product.is_fragile = logistics["is_fragile"]
+
+        if "dimensions_cm" in logistics:
+            dimensions = logistics["dimensions_cm"]
+
+            if "length" in dimensions:
+                product.length_cm = dimensions["length"]
+
+            if "width" in dimensions:
+                product.width_cm = dimensions["width"]
+
+            if "height" in dimensions:
+                product.height_cm = dimensions["height"]
+
+    # ------------------------------------------------------------
+    # UPDATE IMAGES
+    # ------------------------------------------------------------
+
+    if "images" in update_data:
+        images = update_data["images"]
+
+        if "raw_url" in images:
+            product.raw_image_url = images["raw_url"]
+
+        if "enhanced_url" in images:
+            product.enhanced_image_url = images["enhanced_url"]
 
     db.commit()
     db.refresh(product)
 
-    return product
+    return product_to_response(product)
 
 
 # ------------------------------------------------------------
