@@ -78,6 +78,7 @@ from auth import (
 from cn23_generator import generate_cn23_pdf
 from app.services.logistics.barcode_generator import generate_barcode
 from app.api.customs.cn22 import router as cn22_router
+from app.api.logistics import router as logistics_router
 from icegate import router as icegate_router, submit_pbe_to_icegate, get_icegate_status, ICEGATEPBESubmit
 # ============================================================
 # FASTAPI APPLICATION
@@ -90,6 +91,7 @@ app = FastAPI(
 )
 app.include_router(icegate_router)
 app.include_router(cn22_router, prefix="/api/v1")
+app.include_router(logistics_router, prefix="/api/v1")
 
 # ============================================================
 # CORS
@@ -2574,4 +2576,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
     )
+
 
