@@ -53,11 +53,13 @@ class User(Base):
         String(20),
         nullable=True
     )
+
     upi_id: Mapped[str | None] = mapped_column(
-    String(100),
-    unique=True,
-    nullable=True,
+        String(100),
+        unique=True,
+        nullable=True,
     )
+
     password_hash: Mapped[str] = mapped_column(
         String(255),
         nullable=False
@@ -249,6 +251,7 @@ class Escrow(Base):
         nullable=False
     )
 
+
 # ============================================================
 # PAYOUT
 # ============================================================
@@ -316,6 +319,8 @@ class Payout(Base):
         DateTime,
         nullable=True,
     )
+
+
 # ============================================================
 # COMPLIANCE / PBE
 # ============================================================
@@ -542,4 +547,243 @@ class ShippingEvent(Base):
         DateTime,
         default=datetime.utcnow,
         nullable=False
+    )
+
+
+# ============================================================
+# BATCH - POSTAL DISPATCH BATCH
+# ============================================================
+
+class Batch(Base):
+    __tablename__ = "batches"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+    )
+
+    batch_code: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    dnk_center: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="CREATED",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+# ============================================================
+# BATCH ORDER - BATCH <-> ORDER MAPPING
+# ============================================================
+
+class BatchOrder(Base):
+    __tablename__ = "batch_orders"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+    )
+
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batches.id"),
+        nullable=False,
+        index=True,
+    )
+
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+# ============================================================
+# MANIFEST - CONSOLIDATED POSTAL DISPATCH RECORD
+# ============================================================
+
+class Manifest(Base):
+    __tablename__ = "manifests"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # MANIFEST IDENTIFICATION
+    # ========================================================
+
+    manifest_code: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # BATCH REFERENCE
+    # ========================================================
+
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("batches.id"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # DNK / POSTAL FACILITY
+    # ========================================================
+
+    dnk_center: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+    )
+
+    # ========================================================
+    # SHIPMENT SUMMARY
+    # ========================================================
+
+    shipment_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    # ========================================================
+    # MANIFEST STATUS
+    # ========================================================
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="CREATED",
+        nullable=False,
+    )
+
+    # ========================================================
+    # CREATED AT
+    # ========================================================
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+# ============================================================
+# HANDOVER - POSTAL / DNK PHYSICAL HANDOVER
+# ============================================================
+
+class Handover(Base):
+    __tablename__ = "handovers"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # HANDOVER IDENTIFICATION
+    # ========================================================
+
+    handover_reference: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # MANIFEST REFERENCE
+    # ========================================================
+
+    manifest_id: Mapped[int] = mapped_column(
+        ForeignKey("manifests.id"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # DNK / POSTAL FACILITY
+    # ========================================================
+
+    dnk_center: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+    )
+
+    # ========================================================
+    # HANDOVER PERSONNEL
+    # ========================================================
+
+    handed_over_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+
+    received_by: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    # ========================================================
+    # HANDOVER STATUS
+    # ========================================================
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="CREATED",
+        nullable=False,
+    )
+
+    # ========================================================
+    # HANDOVER TIMESTAMP
+    # ========================================================
+
+    handover_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    # ========================================================
+    # NOTES / REMARKS
+    # ========================================================
+
+    remarks: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # ========================================================
+    # CREATED AT
+    # ========================================================
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
     )
