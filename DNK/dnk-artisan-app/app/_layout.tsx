@@ -1,70 +1,97 @@
+/**
+ * Root Application Layout
+ * Universal Auth & Language provider with route protection.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { getAuthToken, fetchCurrentUser } from '../services/api';
+import { StatusBar } from 'expo-status-bar';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Colors } from '../constants/Colors';
+import { useAuthStore } from '../store/useAuthStore';
 import { useLanguageStore } from '../store/useLanguageStore';
 
 export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const setProfileFromUser = useLanguageStore((state) => state.setProfileFromUser);
+  const { hydrateAuth, isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const { hydrateLanguage } = useLanguageStore();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const checkAuthentication = async () => {
-      try {
-        const token = await getAuthToken();
-
-        const isLoginPage = pathname === '/' || pathname === '/index';
-
-        // 1. User is NOT logged in and trying to access protected screen
-        if (!token && !isLoginPage) {
-          router.replace('/');
-          return;
-        }
-
-        // 2. User IS logged in: load live profile from backend if not already loaded
-        if (token) {
-          try {
-            const user = await fetchCurrentUser();
-            if (isMounted && user) {
-              setProfileFromUser(user);
-            }
-          } catch (_) {
-            // Ignore background profile fetch failure
-          }
-        }
-      } catch (error) {
-        console.error('Authentication check failed:', error);
-      } finally {
-        if (isMounted) {
-          setCheckingAuth(false);
-        }
+    let mounted = true;
+    const initialize = async () => {
+      await Promise.all([hydrateAuth(), hydrateLanguage()]);
+      if (mounted) {
+        setIsReady(true);
       }
     };
-
-    checkAuthentication();
-
+    void initialize();
     return () => {
-      isMounted = false;
+      mounted = false;
     };
-  }, [pathname, router]);
+  }, []);
 
-  if (checkingAuth) {
-    return null;
+  // Route protection
+  useEffect(() => {
+    if (!isReady || isAuthLoading) return;
+
+    const isPublicRoute =
+      pathname === '/' ||
+      pathname === '/index' ||
+      pathname === '/login' ||
+      pathname === '/verify-otp' ||
+      pathname.startsWith('/(auth)');
+
+    if (!isAuthenticated && !isPublicRoute) {
+      router.replace('/(auth)/login' as any);
+    } else if (
+      isAuthenticated &&
+      (pathname === '/(auth)/login' ||
+        pathname === '/login' ||
+        pathname === '/(auth)/verify-otp' ||
+        pathname === '/verify-otp' ||
+        pathname === '/' ||
+        pathname === '/index')
+    ) {
+      router.replace('/(tabs)/dashboard' as any);
+    }
+  }, [isReady, isAuthenticated, isAuthLoading, pathname]);
+
+  if (!isReady || isAuthLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+    <>
+      <StatusBar style="dark" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: Colors.background },
+        }}
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="(auth)/verify-otp" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="product/[id]" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+    </>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
