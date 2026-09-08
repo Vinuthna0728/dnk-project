@@ -2,6 +2,7 @@ import re
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import FileResponse
+from services.pexels_service import search_pexels_image
 import os
 import json
 import stripe
@@ -281,7 +282,14 @@ def get_products(
 
     return products
 
+@app.get("/api/pexels/search")
+async def pexels_search(query: str):
+    image = await search_pexels_image(query)
 
+    return {
+        "query": query,
+        "image": image,
+    }
 # ------------------------------------------------------------
 # CREATE PRODUCT
 # ------------------------------------------------------------

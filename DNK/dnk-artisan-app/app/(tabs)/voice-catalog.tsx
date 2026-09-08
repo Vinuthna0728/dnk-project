@@ -1,5 +1,6 @@
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -21,33 +22,6 @@ import { generateAICatalogFromVoice, generateAICatalogFromText, createProduct } 
 
 const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=800&auto=format&fit=crop&q=80';
 
-const RECORDING_OPTIONS: Audio.RecordingOptions = {
-    isMeteringEnabled: true,
-    android: {
-        extension: '.m4a',
-        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-        audioEncoder: Audio.AndroidAudioEncoder.AAC,
-        sampleRate: 44100,
-        numberOfChannels: 2,
-        bitRate: 128000,
-    },
-    ios: {
-        extension: '.m4a',
-        outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-        audioQuality: Audio.IOSAudioQuality.HIGH,
-        sampleRate: 44100,
-        numberOfChannels: 2,
-        bitRate: 128000,
-        linearPCMBitDepth: 16,
-        linearPCMIsBigEndian: false,
-        linearPCMIsFloat: false,
-    },
-    web: {
-        mimeType: 'audio/webm',
-        bitsPerSecond: 128000,
-    },
-};
-
 export default function VoiceCatalogScreen() {
     const { t, currentLang, addProduct } = useLanguageStore();
     const router = useRouter();
@@ -58,6 +32,8 @@ export default function VoiceCatalogScreen() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [audioUri, setAudioUri] = useState<string | null>(null);
+    const [audioFileName, setAudioFileName] = useState('recording.m4a');
+    const [audioMimeType, setAudioMimeType] = useState('audio/mp4');
 
     // Extracted AI Product State
     const [aiExtractedProduct, setAiExtractedProduct] = useState<ProductItem | null>(null);
@@ -71,29 +47,6 @@ export default function VoiceCatalogScreen() {
     const wave1 = useRef(new Animated.Value(10)).current;
     const wave2 = useRef(new Animated.Value(18)).current;
     const wave3 = useRef(new Animated.Value(12)).current;
-
-    // Pre-warm mic permission + audio mode ONCE when the screen mounts, instead
-    // of at button-press time. Requesting permission and priming the audio
-    // pipeline at press-time was adding ~1-2s of startup latency on web
-    // (getUserMedia + MediaRecorder init), which clipped the very beginning of
-    // whatever the artisan said first — usually the product name/material.
-    // By the time the user taps the mic button, this has already resolved,
-    // so createAsync() below starts capturing almost instantly.
-    useEffect(() => {
-        (async () => {
-            try {
-                const permission = await Audio.requestPermissionsAsync();
-                if (permission.granted) {
-                    await Audio.setAudioModeAsync({
-                        allowsRecordingIOS: true,
-                        playsInSilentModeIOS: true,
-                    });
-                }
-            } catch (e) {
-                console.warn('Mic pre-warm failed (will retry on button press):', e);
-            }
-        })();
-    }, []);
 
     useEffect(() => {
         if (recording) {
@@ -165,6 +118,8 @@ export default function VoiceCatalogScreen() {
         setRecording(null);
         setAudioRecorded(false);
         setAudioUri(null);
+        setAudioFileName('recording.m4a');
+        setAudioMimeType('audio/mp4');
         setImageUri(null);
         setAiExtractedProduct(null);
         stopCameraStream();
@@ -201,7 +156,7 @@ export default function VoiceCatalogScreen() {
 
     const sendToAiEngine = async () => {
         setIsProcessing(true);
-        const finalImage = imageUri || DEFAULT_FALLBACK_IMAGE;
+        let finalImage = imageUri || DEFAULT_FALLBACK_IMAGE;
 
         try {
             let aiRes: any;
@@ -246,8 +201,8 @@ export default function VoiceCatalogScreen() {
                 } else {
                     formData.append('file', {
                         uri: audioUri,
-                        name: 'recording.m4a',
-                        type: 'audio/m4a',
+                        name: audioFileName,
+                        type: audioMimeType,
                     } as any);
                 }
 
@@ -257,6 +212,30 @@ export default function VoiceCatalogScreen() {
                 }
 
                 aiRes = await generateAICatalogFromVoice(formData);
+
+                if (!imageUri) {
+                    try {
+                        const productText =
+                            aiRes.product_title_en ||
+                            aiRes.transcript ||
+                            aiRes.category ||
+                            'Indian handicraft';
+
+                        const pexelsResponse = await fetch(
+                            `http://localhost:8000/api/pexels/search?query=${encodeURIComponent(productText)}`
+                        );
+
+                        if (pexelsResponse.ok) {
+                            const pexelsData = await pexelsResponse.json();
+                            if (pexelsData.image?.image_url) {
+                                finalImage = pexelsData.image.image_url;
+                                console.log('Pexels image selected:', finalImage);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Pexels image search failed:', error);
+                    }
+                }
             } else if (imageBase64) {
                 const promptText = 'Handcrafted Indian Artisan Product export ready';
                 aiRes = await generateAICatalogFromText(promptText, currentLang, imageBase64);
@@ -352,73 +331,72 @@ export default function VoiceCatalogScreen() {
         }
     };
 
+    const handleAudioUpload = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: 'audio/*',
+                copyToCacheDirectory: true,
+                multiple: false,
+            });
+
+            if (result.canceled || !result.assets?.[0]) return;
+
+            const file = result.assets[0];
+            const name = file.name || 'recording.m4a';
+            const mimeType =
+                file.mimeType ||
+                (name.toLowerCase().endsWith('.mp3')
+                    ? 'audio/mpeg'
+                    : name.toLowerCase().endsWith('.wav')
+                      ? 'audio/wav'
+                      : name.toLowerCase().endsWith('.webm')
+                        ? 'audio/webm'
+                        : 'audio/mp4');
+
+            setAudioUri(file.uri);
+            setAudioFileName(name);
+            setAudioMimeType(mimeType);
+            setAudioRecorded(true);
+        } catch (error) {
+            console.error('Audio upload failed:', error);
+            alert('Could not upload the audio file.');
+        }
+    };
+
     const handleVoiceRecording = async () => {
         if (recording) {
             try {
-                console.log('Stopping recording...');
                 await recording.stopAndUnloadAsync();
-
-                if (Platform.OS === 'web') {
-                    await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-                }
-
                 const uri = recording.getURI();
-                console.log('Recording URI:', uri);
 
                 if (!uri) {
-                    if (Platform.OS === 'web') {
-                        window.alert('Recording failed: no URI returned. Please try again.');
-                    } else {
-                        Alert.alert('Recording failed', 'No URI returned. Please try again.');
-                    }
-                    setRecording(null);
+                    alert("Recording failed. Please try again.");
                     return;
                 }
 
                 setAudioUri(uri);
-
+                setAudioFileName('recording.webm');
+                setAudioMimeType('audio/webm');
                 if (Platform.OS === 'web') {
-                    // NOTE: `Audio` here refers to the expo-av import, which is a
-                    // namespace object, not the browser's native Audio constructor.
-                    // window.Audio explicitly grabs the real browser constructor.
-                    const audioEl = new window.Audio(uri);
-                    audioEl.controls = true;
-                    audioEl.style.display = 'block';
-                    audioEl.style.marginTop = '10px';
-                    document.body.appendChild(audioEl);
+                    const audio = new window.Audio(uri);
+                    audio.controls = true;
+                    audio.style.display = 'block';
+                    audio.style.marginTop = '10px';
+                    document.body.appendChild(audio);
                 }
-
                 setAudioRecorded(true);
-            } catch (e: any) {
-                console.error('Stopping recording failed (full error):', e);
-                const msg = e?.message || String(e);
-                if (Platform.OS === 'web') {
-                    window.alert(`Could not save the recording: ${msg}`);
-                } else {
-                    Alert.alert('Could not save the recording', msg);
-                }
+            } catch (e) {
+                console.error("Stopping recording failed:", e);
+                alert("Could not save the recording.");
             } finally {
                 setRecording(null);
             }
         } else {
             try {
-                // Permission + audio mode are normally already primed by the
-                // mount-time useEffect above. This is just a safety-net retry
-                // for the rare case that pre-warm failed or hasn't resolved yet.
-                const existingPermission = await Audio.getPermissionsAsync();
-                let granted = existingPermission.granted;
+                const permission = await Audio.requestPermissionsAsync();
 
-                if (!granted) {
-                    const requested = await Audio.requestPermissionsAsync();
-                    granted = requested.granted;
-                }
-
-                if (!granted) {
-                    if (Platform.OS === 'web') {
-                        window.alert('Microphone permission is required.');
-                    } else {
-                        Alert.alert('Permission required', 'Microphone permission is required.');
-                    }
+                if (!permission.granted) {
+                    alert("Microphone permission is required.");
                     return;
                 }
 
@@ -427,23 +405,17 @@ export default function VoiceCatalogScreen() {
                     playsInSilentModeIOS: true,
                 });
 
-                console.log('Starting recording...');
-
-                const { recording: newRecording } = await Audio.Recording.createAsync(
-                    RECORDING_OPTIONS
-                );
+                const { recording: newRecording } =
+                    await Audio.Recording.createAsync(
+                        Audio.RecordingOptionsPresets.HIGH_QUALITY
+                    );
 
                 setRecording(newRecording);
                 setAudioRecorded(false);
                 setAudioUri(null);
-            } catch (e: any) {
-                console.error('Starting recording failed (full error):', e);
-                const msg = e?.message || String(e);
-                if (Platform.OS === 'web') {
-                    window.alert(`Could not start recording: ${msg}`);
-                } else {
-                    Alert.alert('Could not start recording', msg);
-                }
+            } catch (e) {
+                console.error("Starting recording failed:", e);
+                alert("Could not start recording.");
             }
         }
     };
@@ -549,14 +521,12 @@ export default function VoiceCatalogScreen() {
                                         </Text>
                                     </TouchableOpacity>
 
-                                    {recording ? (
+                                    {recording && (
                                         <View style={styles.waveformContainer}>
                                             <Animated.View style={[styles.waveBar, { height: wave1 }]} />
                                             <Animated.View style={[styles.waveBar, { height: wave2 }]} />
                                             <Animated.View style={[styles.waveBar, { height: wave3 }]} />
                                         </View>
-                                    ) : (
-                                        <Text style={styles.photoSubText}>Wait for the red pulse, then speak</Text>
                                     )}
                                 </View>
                             </View>
@@ -619,10 +589,14 @@ export default function VoiceCatalogScreen() {
                                                 </TouchableOpacity>
                                                 <TouchableOpacity onPress={openGallery} style={styles.actionBtnCircle} activeOpacity={0.8}>
                                                     <Text style={styles.photoIcon}>🖼️</Text>
-                                                    <Text style={styles.btnLabel}>Upload File</Text>
+                                                    <Text style={styles.btnLabel}>Upload Image</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity onPress={handleAudioUpload} style={styles.actionBtnCircle} activeOpacity={0.8}>
+                                                    <Text style={styles.photoIcon}>🎵</Text>
+                                                    <Text style={styles.btnLabel}>Upload Audio</Text>
                                                 </TouchableOpacity>
                                             </View>
-                                            <Text style={styles.photoSubText}>Capture with camera or upload image</Text>
+                                            <Text style={styles.photoSubText}>Capture photo, upload image, or upload audio</Text>
                                         </View>
                                     )}
                                 </View>
@@ -735,7 +709,7 @@ const styles = StyleSheet.create({
         width: 120,
         height: 120,
         borderRadius: 60,
-        justify: 'center',
+        justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 3,
         shadowColor: '#000',
