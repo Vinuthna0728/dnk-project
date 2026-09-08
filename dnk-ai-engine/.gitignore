@@ -16,3 +16,7 @@ env/
 # Model caches & logs
 *.log
 .pytest_cache/
+.env
+.env.*
+!.env.example
+dnk-ai-engine/*.webm
