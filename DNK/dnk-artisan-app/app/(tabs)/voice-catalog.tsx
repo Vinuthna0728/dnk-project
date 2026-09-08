@@ -13,6 +13,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -37,6 +38,18 @@ export default function VoiceCatalogScreen() {
 
     // Extracted AI Product State
     const [aiExtractedProduct, setAiExtractedProduct] = useState<ProductItem | null>(null);
+    
+    // NEW: Edit mode states
+    const [editMode, setEditMode] = useState(false);
+    const [editableProduct, setEditableProduct] = useState<ProductItem | null>(null);
+    
+    // NEW: Audio playback states
+    const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+    const [sound, setSound] = useState<Audio.Sound | null>(null);
+    
+    // NEW: Manual text input mode
+    const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice');
+    const [manualText, setManualText] = useState('');
 
     // Web Camera Video Element Reference
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -103,8 +116,19 @@ export default function VoiceCatalogScreen() {
     useEffect(() => {
         return () => {
             stopCameraStream();
+            if (sound) {
+                sound.unloadAsync();
+            }
         };
     }, []);
+
+    // When AI generates product, set editable copy
+    useEffect(() => {
+        if (aiExtractedProduct) {
+            setEditableProduct({...aiExtractedProduct});
+            setEditMode(false);
+        }
+    }, [aiExtractedProduct]);
 
     const stopCameraStream = () => {
         if (streamRef.current) {
@@ -122,6 +146,15 @@ export default function VoiceCatalogScreen() {
         setAudioMimeType('audio/mp4');
         setImageUri(null);
         setAiExtractedProduct(null);
+        setEditableProduct(null);
+        setEditMode(false);
+        setManualText('');
+        setInputMode('voice');
+        if (sound) {
+            sound.unloadAsync();
+            setSound(null);
+        }
+        setIsPlayingAudio(false);
         stopCameraStream();
     };
 
@@ -154,9 +187,67 @@ export default function VoiceCatalogScreen() {
         return null;
     };
 
+    // NEW: Play recording function
+    const playRecording = async () => {
+        if (!audioUri) {
+            alert("No recording to play.");
+            return;
+        }
+        
+        try {
+            if (sound) {
+                await sound.unloadAsync();
+                setSound(null);
+                setIsPlayingAudio(false);
+                return;
+            }
+            
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { uri: audioUri },
+                { shouldPlay: true }
+            );
+            
+            setSound(newSound);
+            setIsPlayingAudio(true);
+            
+            newSound.setOnPlaybackStatusUpdate((status: any) => {
+                if (status.didJustFinish) {
+                    setIsPlayingAudio(false);
+                    setSound(null);
+                }
+            });
+        } catch (e) {
+            console.error("Playback failed:", e);
+            alert("Could not play the recording.");
+        }
+    };
+
+    // NEW: Validate audio before sending
+    const validateAudio = async (uri: string): Promise<boolean> => {
+        try {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+            if (blob.size < 1000) { // Less than 1KB likely empty
+                alert("Your recording seems empty. Please record again with clear audio.");
+                return false;
+            }
+            return true;
+        } catch (e) {
+            console.warn("Could not check audio size:", e);
+            return true; // Proceed if can't check
+        }
+    };
+
     const sendToAiEngine = async () => {
         setIsProcessing(true);
         let finalImage = imageUri || DEFAULT_FALLBACK_IMAGE;
+
+        // VALIDATE: Check if we have either audio or image or text
+        if (!audioUri && !audioRecorded && !imageUri && !manualText.trim()) {
+            alert("Please record your voice, enter text description, or capture a product photo before generating.");
+            setIsProcessing(false);
+            return;
+        }
 
         try {
             let aiRes: any;
@@ -169,9 +260,28 @@ export default function VoiceCatalogScreen() {
                 }
             }
 
-            if (audioUri || audioRecorded) {
+            // Handle manual text input first
+            if (inputMode === 'text' && manualText.trim()) {
+                if (manualText.trim().length < 10) {
+                    alert("Please provide a more detailed description (at least 10 characters).");
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                const promptText = manualText.trim();
+                aiRes = await generateAICatalogFromText(promptText, currentLang, imageBase64);
+            }
+            // Handle voice input
+            else if (audioUri || audioRecorded) {
                 if (!audioUri) {
                     alert("Please record your voice first.");
+                    setIsProcessing(false);
+                    return;
+                }
+
+                // Validate audio before sending
+                const isValid = await validateAudio(audioUri);
+                if (!isValid) {
                     setIsProcessing(false);
                     return;
                 }
@@ -240,11 +350,60 @@ export default function VoiceCatalogScreen() {
                 const promptText = 'Handcrafted Indian Artisan Product export ready';
                 aiRes = await generateAICatalogFromText(promptText, currentLang, imageBase64);
             } else {
-                throw new Error('Please capture a product photo or record a voice note first.');
+                throw new Error('Please provide voice input, text description, or capture a product photo first.');
             }
 
+            // Check if AI returned a valid product or if it's hallucinating
             const titleEn = aiRes.product_title_en || 'Handcrafted Indian Artisan Product';
             const descEn = aiRes.product_description_en || 'Export certified handicraft product.';
+            
+            // Check for hallucination indicators (backend already handles this, but double-check here)
+            if (titleEn === 'Handcrafted Indian Artisan Product' && 
+                (descEn.includes('could not be confirmed') || descEn.includes('pending'))) {
+                Alert.alert(
+                    'Incomplete Product Details',
+                    'The AI could not clearly identify your product. Please provide a more detailed description or clearer audio/photo.',
+                    [
+                        { text: 'Try Again', onPress: resetForm },
+                        { text: 'Edit Manually', onPress: () => {
+                            // Create minimal product for manual editing
+                            const newExtractedItem: ProductItem = {
+                                id: `prod_${Date.now()}`,
+                                title: {
+                                    en: titleEn,
+                                    hi: titleEn,
+                                    kn: titleEn,
+                                    te: titleEn,
+                                    ta: titleEn,
+                                    ml: titleEn,
+                                    mr: titleEn,
+                                    bn: titleEn,
+                                },
+                                description: {
+                                    en: descEn,
+                                    hi: descEn,
+                                    kn: descEn,
+                                    te: descEn,
+                                    ta: descEn,
+                                    ml: descEn,
+                                    mr: descEn,
+                                    bn: descEn,
+                                },
+                                category: 'Needs Manual Review',
+                                hsCode: 'UNKNOWN',
+                                weight: '500g',
+                                priceInr: 0,
+                                imageUri: finalImage,
+                                status: 'ACTIVE_EXPORT',
+                            };
+                            setAiExtractedProduct(newExtractedItem);
+                            setEditMode(true);
+                        }}
+                    ]
+                );
+                setIsProcessing(false);
+                return;
+            }
 
             const newExtractedItem: ProductItem = {
                 id: `prod_${Date.now()}`,
@@ -290,44 +449,50 @@ export default function VoiceCatalogScreen() {
     };
 
     const handleConfirmAndSave = async () => {
-        if (aiExtractedProduct) {
-            setIsProcessing(true);
-            try {
-                const titleText = aiExtractedProduct.title.en || aiExtractedProduct.title[currentLang] || 'Handcrafted Export Product';
-                const descText = aiExtractedProduct.description.en || aiExtractedProduct.description[currentLang] || '';
+        // Use editableProduct if in edit mode, otherwise use aiExtractedProduct
+        const productToSave = editMode ? editableProduct : aiExtractedProduct;
+        
+        if (!productToSave) {
+            alert("No product to save.");
+            return;
+        }
 
-                await createProduct({
-                    title: titleText,
-                    description: descText,
-                    price_inr: aiExtractedProduct.priceInr || 1850,
-                    hs_code: aiExtractedProduct.hsCode,
-                    hs_confidence: 0.95,
-                    image_urls: [aiExtractedProduct.imageUri],
-                });
+        setIsProcessing(true);
+        try {
+            const titleText = productToSave.title.en || productToSave.title[currentLang] || 'Handcrafted Export Product';
+            const descText = productToSave.description.en || productToSave.description[currentLang] || '';
 
-                const res = addProduct(aiExtractedProduct);
-                if (!res.success) {
-                    const errorMsg = res.error || t('duplicate_error');
-                    if (Platform.OS === 'web') {
-                        window.alert(errorMsg);
-                    } else {
-                        Alert.alert('Duplicate Item', errorMsg);
-                    }
-                    return;
-                }
+            await createProduct({
+                title: titleText,
+                description: descText,
+                price_inr: productToSave.priceInr || 1850,
+                hs_code: productToSave.hsCode,
+                hs_confidence: 0.95,
+                image_urls: [productToSave.imageUri],
+            });
 
-                resetForm();
-                router.push('/(tabs)/products' as any);
-            } catch (err: any) {
-                const msg = err.message || 'Failed to save product to backend database.';
+            const res = addProduct(productToSave);
+            if (!res.success) {
+                const errorMsg = res.error || t('duplicate_error');
                 if (Platform.OS === 'web') {
-                    window.alert(`Save Error: ${msg}`);
+                    window.alert(errorMsg);
                 } else {
-                    Alert.alert('Save Error', msg);
+                    Alert.alert('Duplicate Item', errorMsg);
                 }
-            } finally {
-                setIsProcessing(false);
+                return;
             }
+
+            resetForm();
+            router.push('/(tabs)/products' as any);
+        } catch (err: any) {
+            const msg = err.message || 'Failed to save product to backend database.';
+            if (Platform.OS === 'web') {
+                window.alert(`Save Error: ${msg}`);
+            } else {
+                Alert.alert('Save Error', msg);
+            }
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -377,13 +542,6 @@ export default function VoiceCatalogScreen() {
                 setAudioUri(uri);
                 setAudioFileName('recording.webm');
                 setAudioMimeType('audio/webm');
-                if (Platform.OS === 'web') {
-                    const audio = new window.Audio(uri);
-                    audio.controls = true;
-                    audio.style.display = 'block';
-                    audio.style.marginTop = '10px';
-                    document.body.appendChild(audio);
-                }
                 setAudioRecorded(true);
             } catch (e) {
                 console.error("Stopping recording failed:", e);
@@ -498,110 +656,165 @@ export default function VoiceCatalogScreen() {
 
                 {!aiExtractedProduct ? (
                     <View style={styles.formWrapper}>
-                        <View style={styles.sideBySideRow}>
-                            {/* VOICE RECORDER */}
-                            <View style={styles.sideColumn}>
-                                <View style={styles.micBoxContainer}>
-                                    <Animated.View
-                                        style={[
-                                            styles.pulseRing,
-                                            recording ? styles.pulseRingActive : styles.pulseRingInactive,
-                                            { transform: [{ scale: pulseAnim }] }
-                                        ]}
-                                    />
-
-                                    <TouchableOpacity
-                                        onPress={handleVoiceRecording}
-                                        style={[styles.micBtn, recording ? styles.micBtnActive : styles.micBtnInactive]}
-                                        activeOpacity={0.85}
-                                    >
-                                        <Text style={styles.micIcon}>{recording ? '⏹' : '🎙'}</Text>
-                                        <Text style={styles.micText}>
-                                            {recording ? t('stop_mic') : (audioRecorded ? t('voice_done') : t('mic_instruction'))}
-                                        </Text>
-                                    </TouchableOpacity>
-
-                                    {recording && (
-                                        <View style={styles.waveformContainer}>
-                                            <Animated.View style={[styles.waveBar, { height: wave1 }]} />
-                                            <Animated.View style={[styles.waveBar, { height: wave2 }]} />
-                                            <Animated.View style={[styles.waveBar, { height: wave3 }]} />
-                                        </View>
-                                    )}
-                                </View>
-                            </View>
-
-                            {/* PHOTO UPLOAD / CAMERA */}
-                            <View style={styles.sideColumn}>
-                                <View style={styles.photoBox}>
-                                    {isCameraActive ? (
-                                        <View style={styles.cameraLiveContainer}>
-                                            {Platform.OS === 'web' && (
-                                                <video
-                                                    ref={(el) => {
-                                                        videoRef.current = el;
-                                                        if (el && streamRef.current && el.srcObject !== streamRef.current) {
-                                                            el.srcObject = streamRef.current;
-                                                            el.play().catch(() => { });
-                                                        }
-                                                    }}
-                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                    autoPlay
-                                                    playsInline
-                                                    muted
-                                                />
-                                            )}
-                                            <View style={styles.cameraControlsRow}>
-                                                <TouchableOpacity onPress={captureWebSnapshot} style={styles.snapBtn}>
-                                                    <Text style={styles.snapBtnText}>📸 Snap Photo</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={stopCameraStream} style={styles.cancelCameraBtn}>
-                                                    <Text style={styles.cancelCameraText}>✕ Cancel</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        </View>
-                                    ) : imageUri ? (
-                                        <View style={styles.imagePreviewContainer}>
-                                            <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
-
-                                            <View style={styles.photoActionOverlay}>
-                                                <TouchableOpacity onPress={openCamera} style={styles.changePhotoBtn} activeOpacity={0.8}>
-                                                    <Text style={styles.changePhotoText}>📸 Camera</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={openGallery} style={styles.changePhotoBtn} activeOpacity={0.8}>
-                                                    <Text style={styles.changePhotoText}>🖼️ Gallery</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={discardPhoto} style={styles.discardPhotoBtn} activeOpacity={0.8}>
-                                                    <Text style={styles.discardPhotoText}>{t('discard_photo')}</Text>
-                                                </TouchableOpacity>
-                                            </View>
-
-                                            <View style={styles.successBadge}>
-                                                <Text style={styles.successBadgeText}>{t('photo_captured')}</Text>
-                                            </View>
-                                        </View>
-                                    ) : (
-                                        <View style={styles.photoPlaceholder}>
-                                            <View style={styles.btnRow}>
-                                                <TouchableOpacity onPress={openCamera} style={styles.actionBtnCircle} activeOpacity={0.8}>
-                                                    <Text style={styles.photoIcon}>📸</Text>
-                                                    <Text style={styles.btnLabel}>Take Photo</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={openGallery} style={styles.actionBtnCircle} activeOpacity={0.8}>
-                                                    <Text style={styles.photoIcon}>🖼️</Text>
-                                                    <Text style={styles.btnLabel}>Upload Image</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={handleAudioUpload} style={styles.actionBtnCircle} activeOpacity={0.8}>
-                                                    <Text style={styles.photoIcon}>🎵</Text>
-                                                    <Text style={styles.btnLabel}>Upload Audio</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                            <Text style={styles.photoSubText}>Capture photo, upload image, or upload audio</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            </View>
+                        {/* Input Mode Selector */}
+                        <View style={styles.inputModeSelector}>
+                            <TouchableOpacity 
+                                onPress={() => setInputMode('voice')} 
+                                style={[styles.modeBtn, inputMode === 'voice' && styles.modeBtnActive]}
+                            >
+                                <Text style={[styles.modeBtnText, inputMode === 'voice' && styles.modeBtnTextActive]}>🎙️ Voice</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={() => setInputMode('text')} 
+                                style={[styles.modeBtn, inputMode === 'text' && styles.modeBtnActive]}
+                            >
+                                <Text style={[styles.modeBtnText, inputMode === 'text' && styles.modeBtnTextActive]}>⌨️ Type</Text>
+                            </TouchableOpacity>
                         </View>
+
+                        {inputMode === 'text' ? (
+                            <View style={styles.textInputContainer}>
+                                <TextInput
+                                    style={styles.manualTextInput}
+                                    placeholder="Describe your product in English or Hindi..."
+                                    value={manualText}
+                                    onChangeText={setManualText}
+                                    multiline
+                                    numberOfLines={4}
+                                    placeholderTextColor="#9CA3AF"
+                                />
+                                <Text style={styles.charCount}>
+                                    {manualText.length} characters {manualText.length < 10 && '(min 10)'}
+                                </Text>
+                            </View>
+                        ) : (
+                            <View style={styles.sideBySideRow}>
+                                {/* VOICE RECORDER */}
+                                <View style={styles.sideColumn}>
+                                    <View style={styles.micBoxContainer}>
+                                        <Animated.View
+                                            style={[
+                                                styles.pulseRing,
+                                                recording ? styles.pulseRingActive : styles.pulseRingInactive,
+                                                { transform: [{ scale: pulseAnim }] }
+                                            ]}
+                                        />
+
+                                        <TouchableOpacity
+                                            onPress={handleVoiceRecording}
+                                            style={[styles.micBtn, recording ? styles.micBtnActive : styles.micBtnInactive]}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Text style={styles.micIcon}>{recording ? '⏹' : '🎙'}</Text>
+                                            <Text style={styles.micText}>
+                                                {recording ? t('stop_mic') : (audioRecorded ? t('voice_done') : t('mic_instruction'))}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                        {recording && (
+                                            <View style={styles.waveformContainer}>
+                                                <Animated.View style={[styles.waveBar, { height: wave1 }]} />
+                                                <Animated.View style={[styles.waveBar, { height: wave2 }]} />
+                                                <Animated.View style={[styles.waveBar, { height: wave3 }]} />
+                                            </View>
+                                        )}
+                                    </View>
+                                    
+                                    {/* Audio Playback Controls */}
+                                    {audioRecorded && audioUri && (
+                                        <View style={styles.audioControls}>
+                                            <TouchableOpacity onPress={playRecording} style={styles.playBtn}>
+                                                <Text style={styles.playBtnText}>
+                                                    {isPlayingAudio ? '⏹️ Stop' : '▶️ Play Recording'}
+                                                </Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => {
+                                                setAudioUri(null);
+                                                setAudioRecorded(false);
+                                                if (sound) {
+                                                    sound.unloadAsync();
+                                                    setSound(null);
+                                                }
+                                                setIsPlayingAudio(false);
+                                            }} style={styles.deleteAudioBtn}>
+                                                <Text style={styles.deleteAudioText}>🗑️ Delete</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
+
+                                {/* PHOTO UPLOAD / CAMERA */}
+                                <View style={styles.sideColumn}>
+                                    <View style={styles.photoBox}>
+                                        {isCameraActive ? (
+                                            <View style={styles.cameraLiveContainer}>
+                                                {Platform.OS === 'web' && (
+                                                    <video
+                                                        ref={(el) => {
+                                                            videoRef.current = el;
+                                                            if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                                                                el.srcObject = streamRef.current;
+                                                                el.play().catch(() => { });
+                                                            }
+                                                        }}
+                                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                        autoPlay
+                                                        playsInline
+                                                        muted
+                                                    />
+                                                )}
+                                                <View style={styles.cameraControlsRow}>
+                                                    <TouchableOpacity onPress={captureWebSnapshot} style={styles.snapBtn}>
+                                                        <Text style={styles.snapBtnText}>📸 Snap Photo</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={stopCameraStream} style={styles.cancelCameraBtn}>
+                                                        <Text style={styles.cancelCameraText}>✕ Cancel</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        ) : imageUri ? (
+                                            <View style={styles.imagePreviewContainer}>
+                                                <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
+
+                                                <View style={styles.photoActionOverlay}>
+                                                    <TouchableOpacity onPress={openCamera} style={styles.changePhotoBtn} activeOpacity={0.8}>
+                                                        <Text style={styles.changePhotoText}>📸 Camera</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={openGallery} style={styles.changePhotoBtn} activeOpacity={0.8}>
+                                                        <Text style={styles.changePhotoText}>🖼️ Gallery</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={discardPhoto} style={styles.discardPhotoBtn} activeOpacity={0.8}>
+                                                        <Text style={styles.discardPhotoText}>{t('discard_photo')}</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+
+                                                <View style={styles.successBadge}>
+                                                    <Text style={styles.successBadgeText}>{t('photo_captured')}</Text>
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            <View style={styles.photoPlaceholder}>
+                                                <View style={styles.btnRow}>
+                                                    <TouchableOpacity onPress={openCamera} style={styles.actionBtnCircle} activeOpacity={0.8}>
+                                                        <Text style={styles.photoIcon}>📸</Text>
+                                                        <Text style={styles.btnLabel}>Take Photo</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={openGallery} style={styles.actionBtnCircle} activeOpacity={0.8}>
+                                                        <Text style={styles.photoIcon}>🖼️</Text>
+                                                        <Text style={styles.btnLabel}>Upload Image</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={handleAudioUpload} style={styles.actionBtnCircle} activeOpacity={0.8}>
+                                                        <Text style={styles.photoIcon}>🎵</Text>
+                                                        <Text style={styles.btnLabel}>Upload Audio</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                                <Text style={styles.photoSubText}>Capture photo, upload image, or upload audio</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            </View>
+                        )}
 
                         <TouchableOpacity
                             onPress={sendToAiEngine}
@@ -614,7 +827,7 @@ export default function VoiceCatalogScreen() {
                                     <Text style={styles.processingText}>{t('processing_ai')}</Text>
                                 </View>
                             ) : (
-                                <Text style={styles.submitBtnText}>⚡ {t('generate_catalog')}</Text>
+                                <Text style={styles.submitBtnText}>⚡ {inputMode === 'text' ? 'Generate from Text' : t('generate_catalog')}</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -622,44 +835,147 @@ export default function VoiceCatalogScreen() {
                     <View style={styles.previewCard}>
                         <View style={styles.previewHeader}>
                             <Text style={styles.previewBadge}>AI EXTRACTED CATALOG</Text>
-                            <Text style={styles.previewTitle}>{t('ai_preview_title')}</Text>
-                            <Text style={styles.previewSub}>{t('ai_preview_sub')}</Text>
+                            <View style={styles.editHeaderRow}>
+                                <Text style={styles.previewTitle}>Review & Edit Product Details</Text>
+                                <TouchableOpacity onPress={() => setEditMode(!editMode)} style={styles.editToggle}>
+                                    <Text style={styles.editToggleText}>{editMode ? '👁️ View' : '✏️ Edit'}</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.previewSub}>Edit any field before confirming</Text>
                         </View>
 
-                        <Image source={{ uri: aiExtractedProduct.imageUri }} style={styles.cardImage} resizeMode="cover" />
+                        <Image source={{ uri: editableProduct?.imageUri || aiExtractedProduct.imageUri }} style={styles.cardImage} resizeMode="cover" />
 
                         <View style={styles.cardInfo}>
-                            <Text style={styles.fieldLabel}>{t('prod_name_label')}:</Text>
-                            <Text style={styles.fieldValueTitle}>
-                                {aiExtractedProduct.title[currentLang as SupportedLanguage] || aiExtractedProduct.title['en']}
-                            </Text>
+                            {/* Title - Editable */}
+                            <Text style={styles.fieldLabel}>Title:</Text>
+                            {editMode ? (
+                                <TextInput
+                                    style={styles.editInput}
+                                    value={editableProduct?.title.en || ''}
+                                    onChangeText={(text) => setEditableProduct(prev => 
+                                        prev ? {...prev, title: {...prev.title, en: text}} : null
+                                    )}
+                                    placeholder="Enter product title"
+                                    placeholderTextColor="#9CA3AF"
+                                />
+                            ) : (
+                                <Text style={styles.fieldValueTitle}>
+                                    {editableProduct?.title[currentLang as SupportedLanguage] || editableProduct?.title['en']}
+                                </Text>
+                            )}
 
-                            <Text style={styles.fieldLabel}>{t('prod_desc_label')}:</Text>
-                            <Text style={styles.fieldValueDesc}>
-                                {aiExtractedProduct.description[currentLang as SupportedLanguage] || aiExtractedProduct.description['en']}
-                            </Text>
+                            {/* Description - Editable */}
+                            <Text style={styles.fieldLabel}>Description:</Text>
+                            {editMode ? (
+                                <TextInput
+                                    style={[styles.editInput, styles.textArea]}
+                                    value={editableProduct?.description.en || ''}
+                                    onChangeText={(text) => setEditableProduct(prev => 
+                                        prev ? {...prev, description: {...prev.description, en: text}} : null
+                                    )}
+                                    placeholder="Enter product description"
+                                    multiline
+                                    numberOfLines={4}
+                                    placeholderTextColor="#9CA3AF"
+                                />
+                            ) : (
+                                <Text style={styles.fieldValueDesc}>
+                                    {editableProduct?.description[currentLang as SupportedLanguage] || editableProduct?.description['en']}
+                                </Text>
+                            )}
 
+                            {/* Category - Editable */}
+                            <Text style={styles.fieldLabel}>Category:</Text>
+                            {editMode ? (
+                                <TextInput
+                                    style={styles.editInput}
+                                    value={editableProduct?.category || ''}
+                                    onChangeText={(text) => setEditableProduct(prev => 
+                                        prev ? {...prev, category: text} : null
+                                    )}
+                                    placeholder="Enter category"
+                                    placeholderTextColor="#9CA3AF"
+                                />
+                            ) : (
+                                <Text style={styles.fieldValueTitle}>{editableProduct?.category}</Text>
+                            )}
+
+                            {/* Meta Fields - Editable */}
                             <View style={styles.metaRow}>
                                 <View style={styles.metaBox}>
-                                    <Text style={styles.metaLabel}>{t('hs_code_label')}</Text>
-                                    <Text style={styles.metaValueHs}>{aiExtractedProduct.hsCode}</Text>
+                                    <Text style={styles.metaLabel}>HS Code</Text>
+                                    {editMode ? (
+                                        <TextInput
+                                            style={styles.editInputSmall}
+                                            value={editableProduct?.hsCode || ''}
+                                            onChangeText={(text) => setEditableProduct(prev => 
+                                                prev ? {...prev, hsCode: text} : null
+                                            )}
+                                            placeholder="HS Code"
+                                            placeholderTextColor="#9CA3AF"
+                                        />
+                                    ) : (
+                                        <Text style={styles.metaValueHs}>{editableProduct?.hsCode}</Text>
+                                    )}
                                 </View>
+                                
                                 <View style={styles.metaBox}>
-                                    <Text style={styles.metaLabel}>{t('weight_label')}</Text>
-                                    <Text style={styles.metaValue}>{aiExtractedProduct.weight}</Text>
+                                    <Text style={styles.metaLabel}>Weight</Text>
+                                    {editMode ? (
+                                        <TextInput
+                                            style={styles.editInputSmall}
+                                            value={editableProduct?.weight || ''}
+                                            onChangeText={(text) => setEditableProduct(prev => 
+                                                prev ? {...prev, weight: text} : null
+                                            )}
+                                            placeholder="Weight"
+                                            placeholderTextColor="#9CA3AF"
+                                        />
+                                    ) : (
+                                        <Text style={styles.metaValue}>{editableProduct?.weight}</Text>
+                                    )}
                                 </View>
+                                
                                 <View style={styles.metaBox}>
-                                    <Text style={styles.metaLabel}>{t('est_price_label')}</Text>
-                                    <Text style={styles.metaValuePrice}>₹{aiExtractedProduct.priceInr}</Text>
+                                    <Text style={styles.metaLabel}>Price (₹)</Text>
+                                    {editMode ? (
+                                        <TextInput
+                                            style={styles.editInputSmall}
+                                            value={String(editableProduct?.priceInr || '')}
+                                            onChangeText={(text) => setEditableProduct(prev => 
+                                                prev ? {...prev, priceInr: Number(text) || 0} : null
+                                            )}
+                                            keyboardType="numeric"
+                                            placeholder="Price"
+                                            placeholderTextColor="#9CA3AF"
+                                        />
+                                    ) : (
+                                        <Text style={styles.metaValuePrice}>₹{editableProduct?.priceInr}</Text>
+                                    )}
                                 </View>
                             </View>
 
-                            <TouchableOpacity onPress={handleConfirmAndSave} style={styles.confirmBtn}>
-                                <Text style={styles.confirmBtnText}>{t('btn_confirm_add')}</Text>
+                            {/* Buttons */}
+                            <TouchableOpacity 
+                                onPress={handleConfirmAndSave} 
+                                style={styles.confirmBtn}
+                                disabled={isProcessing}
+                            >
+                                {isProcessing ? (
+                                    <View style={styles.processingRow}>
+                                        <ActivityIndicator color="#FFFFFF" />
+                                        <Text style={styles.confirmBtnText}>Saving...</Text>
+                                    </View>
+                                ) : (
+                                    <Text style={styles.confirmBtnText}>
+                                        {editMode ? '✅ Confirm & Save' : '✅ Confirm & Add to Products'}
+                                    </Text>
+                                )}
                             </TouchableOpacity>
 
                             <TouchableOpacity onPress={resetForm} style={styles.cancelBtn}>
-                                <Text style={styles.cancelBtnText}>{t('btn_cancel')}</Text>
+                                <Text style={styles.cancelBtnText}>🔄 {editMode ? 'Discard Changes' : 'Try Again'}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -676,6 +992,56 @@ const styles = StyleSheet.create({
     mainHeading: { fontSize: 24, fontWeight: '900', color: '#1F2937', textAlign: 'center' },
     subHeading: { fontSize: 13, color: '#4B5563', textAlign: 'center', marginTop: 4 },
     formWrapper: { width: '100%', maxWidth: 900 },
+
+    // Input Mode Selector
+    inputModeSelector: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 12,
+        marginBottom: 16,
+    },
+    modeBtn: {
+        paddingHorizontal: 24,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: '#D1D5DB',
+        backgroundColor: '#FFFFFF',
+    },
+    modeBtnActive: {
+        backgroundColor: '#0B7B3E',
+        borderColor: '#0B7B3E',
+    },
+    modeBtnText: { color: '#6B7280', fontWeight: '700', fontSize: 14 },
+    modeBtnTextActive: { color: '#FFFFFF' },
+
+    // Text Input
+    textInputContainer: {
+        marginVertical: 10,
+        width: '100%',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+    },
+    manualTextInput: {
+        borderWidth: 1,
+        borderColor: '#D1D5DB',
+        borderRadius: 8,
+        padding: 12,
+        minHeight: 100,
+        backgroundColor: '#FFFFFF',
+        fontSize: 14,
+        textAlignVertical: 'top',
+        color: '#1F2937',
+    },
+    charCount: {
+        fontSize: 12,
+        color: '#6B7280',
+        marginTop: 6,
+        textAlign: 'right',
+    },
 
     sideBySideRow: {
         flexDirection: 'row',
@@ -724,6 +1090,28 @@ const styles = StyleSheet.create({
     micText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800', textAlign: 'center', marginTop: 4 },
     waveformContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 10, position: 'absolute', bottom: 12 },
     waveBar: { width: 4, backgroundColor: '#8B2222', marginHorizontal: 2, borderRadius: 2 },
+
+    // Audio Controls
+    audioControls: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 10,
+        marginTop: 8,
+    },
+    playBtn: {
+        backgroundColor: '#1E40AF',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 6,
+    },
+    playBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
+    deleteAudioBtn: {
+        backgroundColor: '#DC2626',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 6,
+    },
+    deleteAudioText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
 
     photoBox: {
         flex: 1,
@@ -864,13 +1252,52 @@ const styles = StyleSheet.create({
     },
     previewHeader: { padding: 16, backgroundColor: '#F9FAFB', borderBottomWidth: 1, borderColor: '#F3F4F6' },
     previewBadge: { fontSize: 10, fontWeight: '800', color: '#0B7B3E', letterSpacing: 0.5 },
-    previewTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginTop: 2 },
+    editHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+    previewTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
     previewSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+    editToggle: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#E5E7EB',
+        borderRadius: 6,
+    },
+    editToggleText: { fontSize: 12, fontWeight: '700', color: '#1F2937' },
     cardImage: { width: '100%', height: 220 },
     cardInfo: { padding: 16 },
     fieldLabel: { fontSize: 11, fontWeight: '700', color: '#6B7280', marginTop: 10, textTransform: 'uppercase' },
     fieldValueTitle: { fontSize: 16, fontWeight: '800', color: '#1F2937', marginTop: 2 },
     fieldValueDesc: { fontSize: 13, color: '#4B5563', marginTop: 2, lineHeight: 18 },
+    editInput: {
+        borderWidth: 1,
+        borderColor: '#D1D5DB',
+        borderRadius: 6,
+        padding: 8,
+        marginVertical: 4,
+        backgroundColor: '#F9FAFB',
+        fontSize: 14,
+        color: '#1F2937',
+    },
+    textArea: {
+        minHeight: 80,
+        textAlignVertical: 'top',
+    },
+    editInputSmall: {
+        borderWidth: 1,
+        borderColor: '#D1D5DB',
+        borderRadius: 4,
+        padding: 4,
+        marginVertical: 2,
+        backgroundColor: '#F9FAFB',
+        fontSize: 12,
+        textAlign: 'center',
+        width: '100%',
+        color: '#1F2937',
+    },
     metaRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 16, marginBottom: 20 },
     metaBox: { flex: 1, backgroundColor: '#F3F4F6', padding: 10, borderRadius: 8, alignItems: 'center' },
     metaLabel: { fontSize: 10, color: '#6B7280', fontWeight: '700' },
