@@ -17,6 +17,7 @@ from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
+    relationship,
 )
 
 
@@ -309,15 +310,32 @@ class Order(Base):
         nullable=False
     )
 
+    channel_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="D2C_INLAND"
+    )
+
     quantity: Mapped[int] = mapped_column(
         nullable=False,
         default=1
     )
 
-    amount_inr: Mapped[float] = mapped_column(
+    amount_inr: Mapped[float | None] = mapped_column(
         Numeric(12, 2),
-        nullable=False
+        nullable=True
     )
+
+    amount_usd: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="INR"
+)
 
     shipping_address: Mapped[str] = mapped_column(
         Text,
@@ -327,6 +345,22 @@ class Order(Base):
     country: Mapped[str] = mapped_column(
         String(100),
         nullable=False
+    )
+
+    shipping_pincode: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True
+    )
+
+    destination_country_code: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True
+    )
+
+    tracking_barcode: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+        unique=True
     )
 
     status: Mapped[str] = mapped_column(
@@ -385,9 +419,20 @@ class Escrow(Base):
         nullable=False
     )
 
-    amount_inr: Mapped[float] = mapped_column(
+    amount_inr: Mapped[float | None] = mapped_column(
         Float,
-        nullable=False
+        nullable=True
+    )
+
+    amount_usd: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="INR"
     )
 
     status: Mapped[str] = mapped_column(
@@ -434,6 +479,22 @@ class Payout(Base):
     amount_inr: Mapped[float] = mapped_column(
         Numeric(12, 2),
         nullable=False,
+    )
+
+    amount_inr: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    amount_usd: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="INR",
     )
 
     destination_type: Mapped[str] = mapped_column(

@@ -47,6 +47,7 @@ from schemas import (
     ProductCreate,
     ProductUpdate,
     ProductResponse,
+    PublicProductResponse,
 
     UserRegister,
     UserResponse,
@@ -280,6 +281,80 @@ def get_products(
         product_to_response(product)
         for product in products
     ]
+
+# ------------------------------------------------------------
+# PUBLIC PRODUCTS BY CHANNEL
+# ------------------------------------------------------------
+
+@app.get(
+    "/api/v1/products/public",
+    response_model=list[PublicProductResponse],
+)
+def get_public_products(
+    channel: str,
+    db: Session = Depends(get_db),
+):
+    channel_filters = {
+        "d2c": Product.is_d2c.is_(True),
+        "b2b": Product.is_b2b.is_(True),
+        "export": Product.is_export.is_(True),
+    }
+
+    if channel not in channel_filters:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid channel. Use d2c, b2b, or export.",
+        )
+
+    products = (
+        db.query(Product)
+        .filter(channel_filters[channel])
+        .order_by(Product.id)
+        .all()
+    )
+
+    result = []
+
+    for product in products:
+        if channel == "d2c":
+            pricing = {
+                "retail_price_inr": product.retail_price_inr,
+            }
+
+        elif channel == "b2b":
+            pricing = {
+                "wholesale_price_inr": product.wholesale_price_inr,
+                "b2b_moq": product.b2b_moq,
+            }
+
+        else:
+            pricing = {
+                "export_price_usd": product.export_price_usd,
+            }
+
+        result.append(
+            PublicProductResponse(
+                id=product.id,
+                title_en=product.title_en,
+                title_hi=product.title_hi,
+                description_en=product.description_en,
+                description_hi=product.description_hi,
+                category=product.category,
+                hs_code=product.hs_code,
+                enhanced_image_url=product.enhanced_image_url,
+                raw_image_url=product.raw_image_url,
+                pricing=pricing,
+                logistics={
+                    "weight_grams": product.weight_grams,
+                    "is_fragile": product.is_fragile,
+                },
+                seller_id=product.seller_id,
+            )
+        )
+
+    return result
+
+
 
 # ------------------------------------------------------------
 # CREATE PRODUCT
@@ -558,7 +633,11 @@ def create_product(
 
         # Channel-specific pricing
         cost_price_inr=data.pricing.cost_price_inr,
-        retail_price_inr=data.pricing.retail_price_inr,
+        retail_price_inr=(
+            data.pricing.retail_price_inr
+            if data.pricing.retail_price_inr is not None
+            else resolved_price
+        ),
         wholesale_price_inr=data.pricing.wholesale_price_inr,
         b2b_moq=data.pricing.b2b_moq,
         b2b_bulk_discount_percentage=(
@@ -897,9 +976,6 @@ def create_order(
     )
 
     if not product:
-        product = db.query(Product).first()
-
-    if not product:
         raise HTTPException(
             status_code=404,
             detail="Product not found",
@@ -911,18 +987,69 @@ def create_order(
             detail="Quantity must be greater than zero",
         )
 
-    amount = float(product.price_inr) * data.quantity
+    if data.channel_type == "D2C_INLAND":
+        if not product.is_d2c:
+            raise HTTPException(
+                status_code=400,
+                detail="This product is not available for D2C orders.",
+            )
+
+        unit_price = product.retail_price_inr
+
+    elif data.channel_type == "B2B":
+        if not product.is_b2b:
+            raise HTTPException(
+                status_code=400,
+                detail="This product is not available for B2B orders.",
+            )
+
+        if data.quantity < product.b2b_moq:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Minimum B2B order quantity is {product.b2b_moq}",
+            )
+
+        unit_price = product.wholesale_price_inr
+
+    elif data.channel_type == "EXPORT":
+        if not product.is_export:
+            raise HTTPException(
+                status_code=400,
+                detail="This product is not available for export orders.",
+            )
+
+        unit_price = product.export_price_usd
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid channel_type. Use D2C_INLAND, B2B, or EXPORT.",
+        )
+
+    if unit_price is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Pricing is not configured for this channel.",
+        )
+
+    amount = float(unit_price) * data.quantity
+
+    is_export = data.channel_type == "EXPORT"
 
     order = Order(
         buyer_id=current_user.id,
         product_id=product.id,
+        channel_type=data.channel_type,
         quantity=data.quantity,
-        amount_inr=amount,
+        amount_inr=None if is_export else amount,
+        amount_usd=amount if is_export else None,
+        currency="USD" if is_export else "INR",
         shipping_address=data.shipping_address,
         country=data.country,
+        shipping_pincode=data.shipping_pincode,
+        destination_country_code=data.destination_country_code,
         status="PENDING",
     )
-
     db.add(order)
     db.commit()
     db.refresh(order)
@@ -935,6 +1062,8 @@ def create_order(
             buyer_id=order.buyer_id,
             seller_id=product.seller_id,
             amount_inr=order.amount_inr,
+            amount_usd=order.amount_usd,
+            currency=order.currency,
             status="CREATED",
         )
         db.add(escrow)
@@ -950,7 +1079,8 @@ def create_order(
 
     try:
         stripe.api_key = stripe_secret
-        unit_amount_paise = int(round(float(product.price_inr) * 100))
+        unit_amount = int(round(float(unit_price) * 100))
+        stripe_currency = "usd" if data.channel_type == "EXPORT" else "inr"
 
         success_url_template = os.getenv(
             "STRIPE_SUCCESS_URL",
@@ -977,8 +1107,8 @@ def create_order(
             line_items=[
                 {
                     "price_data": {
-                        "currency": "inr",
-                        "unit_amount": unit_amount_paise,
+                        "currency": stripe_currency,
+                        "unit_amount": unit_amount,
                         "product_data": {
                             "name": product.title,
                             "description": product.description or "Handcrafted Indian Artisan Export Item",
@@ -1831,6 +1961,7 @@ def process_pbe_filing(
 
     pbe_number = f"PBE-{order.id:06d}"
     tracking_number = f"DNK{order.id:09d}IN"
+    order.tracking_barcode = tracking_number
 
     pbe = PBE(
         order_id=order.id,
@@ -2455,7 +2586,29 @@ def dnk_postal_scan_webhook(
             "escrow_id": escrow.id,
             "payout_id": existing_payout.id if existing_payout else None,
             "payout_reference": existing_payout.payout_reference if existing_payout else None,
-            "payout_amount_inr": float(existing_payout.amount_inr) if existing_payout else float(escrow.amount_inr),
+            "payout_amount_inr": (
+                float(existing_payout.amount_inr)
+                if existing_payout and existing_payout.amount_inr is not None
+                else (
+                    float(escrow.amount_inr)
+                    if escrow.amount_inr is not None
+                    else None
+                )
+            ),
+            "payout_amount_usd": (
+                float(existing_payout.amount_usd)
+                if existing_payout and existing_payout.amount_usd is not None
+                else (
+                    float(escrow.amount_usd)
+                    if escrow.amount_usd is not None
+                    else None
+                )
+            ),
+            "currency": (
+                existing_payout.currency
+                if existing_payout
+                else escrow.currency
+            ),
             "payout_destination": existing_payout.destination if existing_payout else None,
             "payout_status": existing_payout.status if existing_payout else "SUCCESS",
             "escrow_status": escrow.status,
@@ -2492,12 +2645,17 @@ def dnk_postal_scan_webhook(
     db.add(shipping_event)
 
     # 8. Create Payout Ledger
-    payout_reference = f"PAY-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{escrow.id:06d}"
+    payout_reference = (
+        f"PAY-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{escrow.id:06d}"
+    )
+
     payout = Payout(
         escrow_id=escrow.id,
         order_id=order.id,
         seller_id=escrow.seller_id,
         amount_inr=escrow.amount_inr,
+        amount_usd=escrow.amount_usd,
+        currency=escrow.currency,
         destination_type="UPI",
         destination=seller_destination,
         status="SUCCESS",
@@ -2535,7 +2693,17 @@ def dnk_postal_scan_webhook(
         "shipping_event_id": shipping_event.id,
         "payout_id": payout.id,
         "payout_reference": payout.payout_reference,
-        "payout_amount_inr": float(payout.amount_inr),
+        "payout_amount_inr": (
+            float(payout.amount_inr)
+            if payout.amount_inr is not None
+            else None
+        ),
+        "payout_amount_usd": (
+            float(payout.amount_usd)
+            if payout.amount_usd is not None
+            else None
+        ),
+        "currency": payout.currency,
         "payout_destination": payout.destination,
         "payout_status": payout.status,
         "escrow_status": escrow.status,
@@ -2567,12 +2735,14 @@ def mock_fpo_transfer(
     if pbe.buyer_id != current_user.id and pbe.seller_id != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="You are not allowed to update this shipment")
 
-    # Preceding state requirement: Must be dropped at DNK / handed over
-    allowed_order_states = ["DROPPED_AT_DNK", "POSTAL_ACCEPTED", "FPO_TRANSFERRED", "LEO_GRANTED", "LEO_RELEASED", "INTERNATIONAL_DISPATCHED", "DELIVERED"]
-    if order.status not in allowed_order_states:
+    # FPO transfer is only valid after DNK postal handover.
+    if order.status not in ["DROPPED_AT_DNK", "POSTAL_ACCEPTED"]:
         raise HTTPException(
             status_code=400,
-            detail=f"FPO transfer cannot be performed before postal acceptance scan. Current order status: {order.status}"
+            detail=(
+                "FPO transfer can only be performed after DNK postal handover. "
+                f"Current order status: {order.status}"
+            )
         )
 
     if order.status == "FPO_TRANSFERRED" or pbe.status == "FPO_TRANSFERRED":
@@ -2648,11 +2818,15 @@ def mock_leo_release(
             "duplicate": True,
         }
 
-    if order.status != "FPO_TRANSFERRED" and pbe.status != "FPO_TRANSFERRED":
+    if order.status != "FPO_TRANSFERRED" or pbe.status != "FPO_TRANSFERRED":
         raise HTTPException(
             status_code=400,
-            detail=f"LEO can only be granted after FPO transfer. Current order status: {order.status}"
-        )
+            detail=(
+                "LEO can only be granted after FPO transfer. "
+                f"Current order status: {order.status}, "
+                f"PBE status: {pbe.status}"
+            )
+    )
 
     shipping_event = ShippingEvent(
         order_id=order.id,

@@ -164,6 +164,44 @@ class ProductResponse(BaseModel):
         from_attributes=True
     )
 
+
+# ============================================================
+# PUBLIC PRODUCT SCHEMAS
+# ============================================================
+
+class PublicProductPricing(BaseModel):
+    retail_price_inr: Decimal | None = None
+    wholesale_price_inr: Decimal | None = None
+    b2b_moq: int | None = None
+    export_price_usd: Decimal | None = None
+
+
+class PublicProductLogistics(BaseModel):
+    weight_grams: float | None = None
+    is_fragile: bool = False
+
+
+class PublicProductResponse(BaseModel):
+    id: int
+    title_en: str | None
+    title_hi: str | None
+    description_en: str | None
+    description_hi: str | None
+    category: str | None
+    hs_code: str | None
+
+    enhanced_image_url: str | None
+    raw_image_url: str | None
+
+    pricing: PublicProductPricing
+    logistics: PublicProductLogistics
+
+    seller_id: int
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
 # ============================================================
 # USER SCHEMAS
 # ============================================================
@@ -209,11 +247,23 @@ class TokenResponse(BaseModel):
 # ORDER SCHEMAS
 # ============================================================
 
+ORDER_STATUSES = [
+    "PENDING",
+    "CONFIRMED",
+    "LABEL_GENERATED",
+    "POST_DROPPED",
+    "IN_TRANSIT",
+    "DELIVERED",
+]
+
 class OrderCreate(BaseModel):
     product_id: int
     quantity: int = 1
+    channel_type: str = "D2C_INLAND"
     shipping_address: str
     country: str
+    shipping_pincode: str | None = None
+    destination_country_code: str | None = None
 
 
 class OrderResponse(BaseModel):
@@ -221,9 +271,14 @@ class OrderResponse(BaseModel):
     buyer_id: int
     product_id: int
     quantity: int
-    amount_inr: float
+    channel_type: str
+    amount_inr: float | None
+    amount_usd: float | None
     shipping_address: str
     country: str
+    shipping_pincode: str | None
+    destination_country_code: str | None
+    tracking_barcode: str | None
     status: str
     created_at: datetime
     checkout_url: str | None = None
@@ -233,7 +288,6 @@ class OrderResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
-
 
 # ============================================================
 # ESCROW SCHEMAS
@@ -248,7 +302,9 @@ class EscrowResponse(BaseModel):
     order_id: int
     buyer_id: int
     seller_id: int
-    amount_inr: float
+    amount_inr: float | None
+    amount_usd: float | None
+    currency: str
     status: str
     created_at: datetime
 
@@ -273,7 +329,9 @@ class PayoutResponse(BaseModel):
     escrow_id: int
     order_id: int
     seller_id: int
-    amount_inr: float
+    amount_inr: float | None
+    amount_usd: float | None
+    currency: str
     destination_type: str
     destination: str
     status: str
