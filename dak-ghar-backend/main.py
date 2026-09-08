@@ -77,6 +77,9 @@ from auth import (
     get_current_user,
 )
 from cn23_generator import generate_cn23_pdf
+from app.services.logistics.barcode_generator import generate_barcode
+from app.api.customs.cn22 import router as cn22_router
+from app.api.logistics import router as logistics_router
 from icegate import router as icegate_router, submit_pbe_to_icegate, get_icegate_status, ICEGATEPBESubmit
 # ============================================================
 # FASTAPI APPLICATION
@@ -88,6 +91,8 @@ app = FastAPI(
     description="Backend API for export, compliance, escrow and logistics",
 )
 app.include_router(icegate_router)
+app.include_router(cn22_router, prefix="/api/v1")
+app.include_router(logistics_router, prefix="/api/v1")
 
 # ============================================================
 # CORS
@@ -1983,7 +1988,14 @@ def process_pbe_filing(
     db.commit()
     db.refresh(pbe)
 
-    # 1. Generate CN23 PDF Document
+    # 1. Generate Code 128 barcode PDF
+    try:
+        barcode_path = generate_barcode(tracking_number)
+        print(f"[Barcode] Generated: {barcode_path}")
+    except Exception as barcode_err:
+        print(f"[Barcode Generation Warning] {barcode_err}")
+
+    # 2. Generate CN23 PDF Document
     try:
         cn23_path = generate_cn23_pdf(
             pbe_number=pbe.pbe_number,
