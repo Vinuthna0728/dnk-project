@@ -3,4 +3,4 @@ from models import Base
 
 Base.metadata.create_all(bind=engine)
 
-print("✅ Database tables created successfully!")
+print("[OK] Database tables created successfully!")

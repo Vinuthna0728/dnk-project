@@ -1974,7 +1974,7 @@ def process_pbe_filing(
         buyer_id=buyer_id,
         product_id=product_id,
         hs_code=hs_code,
-        invoice_value_inr=order.amount_inr,
+        invoice_value_inr=order.amount_inr if order.amount_inr is not None else float(order.amount_usd or 0) * (exchange_rate or 83.0),
         currency=currency,
         exchange_rate=exchange_rate,
         country=order.country or "United States",
@@ -2004,7 +2004,7 @@ def process_pbe_filing(
             buyer_name=buyer_name,
             country=order.country or "United States",
             hs_code=hs_code,
-            invoice_value_inr=float(order.amount_inr),
+            invoice_value_inr=float(order.amount_inr) if order.amount_inr is not None else float(pbe.invoice_value_inr or 0.0),
             currency=currency,
             tracking_number=tracking_number,
         )
