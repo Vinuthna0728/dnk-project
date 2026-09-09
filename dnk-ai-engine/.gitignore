@@ -16,3 +16,9 @@ env/
 # Model caches & logs
 *.log
 .pytest_cache/
+# Static runtime media uploads and studio outputs
+static/raw/*
+!static/raw/.gitkeep
+
+static/studio/*
+!static/studio/.gitkeep

@@ -1,0 +1,32 @@
+{
+  "DGFT_Schedule_2_Prohibited_Fauna": [
+    "All wild animals and animal articles (Wildlife Protection Act, 1972)",
+    "Beche-de-mer (Sea Cucumber)",
+    "Peacock tail feathers and handicrafts made thereof",
+    "Live exotic birds (including parrots, macaws, ostriches, and emus)",
+    "Specific undersized rock and sand lobsters (e.g., Panulirus polyphagus)"
+  ],
+  "DGFT_Schedule_2_Prohibited_Flora_and_Timber": [
+    "Red Sandalwood / Red Sanders (Pterocarpus santalinus) in log or timber form",
+    "Sandalwood (Santalum album) timber",
+    "Coptis teeta (Mishmi Teeta)",
+    "Taxus wallichiana (Himalayan Yew)",
+    "Nepenthes khasiana (Pitcher plant)"
+  ],
+  "SCOMET_Restricted_Dual_Use_Items": [
+    "Military stores and defence electronics",
+    "Toxic industrial chemicals and chemical weapons precursors",
+    "Specialized dual-use alloys and strategic materials",
+    "Encryption-enabled electronic devices lacking DoT/MeitY clearance"
+  ],
+  "Antiquities_and_Art_Treasures_Act_1972": [
+    "Manuscripts and documents older than 75 years",
+    "Sculptures, paintings, and historical artifacts older than 100 years",
+    "Coins older than 100 years"
+  ],
+  "Narcotic_Drugs_and_Psychotropic_Substances_Act": [
+    "Opium poppy and its derivatives",
+    "Cannabis (hemp) resin and flowers",
+    "Coca leaf and its extracts"
+  ]
+}

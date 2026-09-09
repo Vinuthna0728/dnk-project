@@ -1,21 +1,44 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
 from app.core.config import get_settings
 from app.core.qdrant import QdrantManager
+from app.core.onnx_session import onnx_worker
+from app.core.gemini_client import gemini_worker
 from app.api.v1.router import api_router
-import os
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 settings = get_settings()
 
+os.makedirs("static/raw", exist_ok=True)
+os.makedirs("static/studio", exist_ok=True)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup phase: Connect to Vector Database
-    await QdrantManager.connect()
+    try:
+        await QdrantManager.connect()
+    except Exception as e:
+        print(f"Warning: Qdrant DB connection deferred: {e}")
+
+    try:
+        onnx_worker.initialize()
+    except Exception as e:
+        print(f"Warning: ONNX worker initialization deferred: {e}")
+
+    try:
+        gemini_worker.initialize()
+    except Exception as e:
+        print(f"Warning: Gemini client initialization deferred: {e}")
+
     yield
-    # Shutdown phase: Clean connections
-    await QdrantManager.close()
+
+    try:
+        await QdrantManager.close()
+    except Exception:
+        pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -31,6 +54,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/health")
 def root_health():

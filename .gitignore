@@ -57,7 +57,8 @@ out/
 web-build/
 
 # --- Generated PDFs & Documents ---
-generated_documents/*.pdf
+generated_documents/*
+!generated_documents/.gitkeep
 *.pdf
 
 # --- Local Vector DB Data & Locks ---
