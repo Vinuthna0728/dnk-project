@@ -155,6 +155,8 @@ class CatalogService:
                 "Keyword extraction failed (%s: %s) — falling back to raw text.",
                 type(exc).__name__, exc,
             )
+        if (raw_text or "").strip() == SPEECH_FALLBACK_TRANSCRIPT:
+            return _UNKNOWN_KEYWORD_MARKER
         return raw_text if raw_text else _UNKNOWN_KEYWORD_MARKER
 
     # ------------------------------------------------------------------ #
