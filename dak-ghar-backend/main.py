@@ -5,7 +5,8 @@ from fastapi.responses import FileResponse
 import os
 import json
 import stripe
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 import uvicorn
 import requests
@@ -39,6 +40,7 @@ from models import (
     ComplianceCheck,
     PBE,
     ShippingEvent,
+    EmailOTP,
 )
 
 from schemas import (
@@ -52,6 +54,10 @@ from schemas import (
     UserResponse,
     UserProfileUpdate,
     TokenResponse,
+
+    SendOTPRequest,
+    VerifyOTPRequest,
+    MessageResponse,
 
     OrderCreate,
     OrderResponse,
@@ -75,8 +81,10 @@ from auth import (
     create_access_token,
     get_current_user,
 )
+from email_service import send_otp_email
 from cn23_generator import generate_cn23_pdf
 from icegate import router as icegate_router, submit_pbe_to_icegate, get_icegate_status, ICEGATEPBESubmit
+
 # ============================================================
 # FASTAPI APPLICATION
 # ============================================================
@@ -145,13 +153,13 @@ def register_user(
     hashed_password = hash_password(data.password)
 
     user = User(
-    name=data.name,
-    email=data.email,
-    phone=data.phone,
-    upi_id=data.upi_id,
-    password_hash=hashed_password,
-    role="SELLER",
-)
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
+        upi_id=data.upi_id,
+        password_hash=hashed_password,
+        role="SELLER",
+    )
 
     db.add(user)
     db.commit()
@@ -161,7 +169,7 @@ def register_user(
 
 
 # ------------------------------------------------------------
-# LOGIN
+# LOGIN (PASSWORD-BASED)
 # ------------------------------------------------------------
 
 @app.post(
@@ -201,6 +209,122 @@ def login_user(
             },
         )
 
+    access_token = create_access_token(
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+
+# ------------------------------------------------------------
+# EMAIL OTP LOGIN FLOW
+# ------------------------------------------------------------
+
+@app.post(
+    "/api/v1/auth/otp/send",
+    response_model=MessageResponse,
+)
+def send_login_otp(
+    payload: SendOTPRequest,
+    db: Session = Depends(get_db),
+):
+    email = payload.email.strip().lower()
+
+    # Generate 6-digit numeric OTP
+    otp_code = "".join(secrets.choice("0123456789") for _ in range(6))
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+
+    # Invalidate previous unused OTPs for this email address
+    db.query(EmailOTP).filter(
+        EmailOTP.email == email,
+        EmailOTP.is_used == False,
+    ).update({"is_used": True})
+
+    # Save new OTP entry
+    otp_entry = EmailOTP(
+        email=email,
+        otp_code=otp_code,
+        expires_at=expires_at,
+        is_used=False,
+    )
+    db.add(otp_entry)
+    db.commit()
+
+    # Dispatch email
+    sent = send_otp_email(email, otp_code)
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send OTP email. Please try again later.",
+        )
+
+    return MessageResponse(
+        message="OTP sent successfully to your email address.",
+        status="success",
+    )
+
+
+@app.post(
+    "/api/v1/auth/otp/verify",
+    response_model=TokenResponse,
+)
+def verify_login_otp(
+    payload: VerifyOTPRequest,
+    db: Session = Depends(get_db),
+):
+    email = payload.email.strip().lower()
+    otp_input = payload.otp.strip()
+
+    # Query active, matching OTP
+    otp_record = (
+        db.query(EmailOTP)
+        .filter(
+            EmailOTP.email == email,
+            EmailOTP.otp_code == otp_input,
+            EmailOTP.is_used == False,
+        )
+        .order_by(EmailOTP.created_at.desc())
+        .first()
+    )
+
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP code or email.",
+        )
+
+    if datetime.utcnow() > otp_record.expires_at:
+        otp_record.is_used = True
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please request a new code.",
+        )
+
+    # Mark OTP as consumed
+    otp_record.is_used = True
+
+    # Retrieve existing user or create a user profile if newly logging in
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        default_name = email.split("@")[0].capitalize()
+        user = User(
+            name=default_name,
+            email=email,
+            password_hash=hash_password(secrets.token_urlsafe(16)),
+            role="SELLER",
+        )
+        db.add(user)
+        db.flush()
+
+    db.commit()
+
+    # Issue JWT access token
     access_token = create_access_token(
         user_id=user.id,
         email=user.email,
@@ -828,7 +952,6 @@ def get_order(
         )
 
     return order
-
 
 
 # ------------------------------------------------------------
@@ -1493,8 +1616,6 @@ def get_compliance_check(
 
 
 # ============================================================
-# LOGISTICS — PBE SUBMIT
-# ============================================================
 # LOGISTICS – CORE PBE-III FILING & ICEGATE SERVICE
 # ============================================================
 
@@ -1516,7 +1637,6 @@ def process_pbe_filing(
     """
     existing_pbe = db.query(PBE).filter(PBE.order_id == order.id).first()
     if existing_pbe:
-        # If existing PBE needs ICEGATE submission or reference refresh
         if not existing_pbe.icegate_reference or existing_pbe.icegate_status != "ACCEPTED":
             try:
                 icegate_data = submit_pbe_to_icegate(
@@ -1690,9 +1810,7 @@ def create_pbe(
 
     return pbe
 
-# ============================================================
-# LOGISTICS — GET PBEs
-# ============================================================
+
 # ============================================================
 # LOGISTICS — ICEGATE STATUS SYNC
 # ============================================================
@@ -1707,10 +1825,7 @@ def sync_icegate_status(
     db: Session = Depends(get_db),
 ):
 
-    # --------------------------------------------------------
     # 1. Find PBE
-    # --------------------------------------------------------
-
     pbe = (
         db.query(PBE)
         .filter(PBE.id == pbe_id)
@@ -1723,10 +1838,7 @@ def sync_icegate_status(
             detail="PBE not found",
         )
 
-    # --------------------------------------------------------
     # 2. Authorization
-    # --------------------------------------------------------
-
     if (
         pbe.seller_id != current_user.id
         and pbe.buyer_id != current_user.id
@@ -1736,20 +1848,14 @@ def sync_icegate_status(
             detail="You are not allowed to sync this PBE",
         )
 
-    # --------------------------------------------------------
     # 3. ICEGATE reference must exist
-    # --------------------------------------------------------
-
     if not pbe.icegate_reference:
         raise HTTPException(
             status_code=400,
             detail="PBE has not been submitted to ICEGATE",
         )
 
-    # --------------------------------------------------------
     # 4. Ask Mock ICEGATE for current status
-    # --------------------------------------------------------
-
     try:
         icegate_data = get_icegate_status(pbe.icegate_reference)
     except Exception as exc:
@@ -1758,41 +1864,26 @@ def sync_icegate_status(
             detail=f"Mock ICEGATE service unavailable: {str(exc)}",
         )
 
-    # --------------------------------------------------------
-    # 7. Extract status
-    # --------------------------------------------------------
-
+    # 5. Extract status
     icegate_status = icegate_data.get(
         "status",
         "UNKNOWN",
     )
 
-    # --------------------------------------------------------
-    # 8. Save ICEGATE status
-    # --------------------------------------------------------
-
+    # 6. Save ICEGATE status
     pbe.icegate_status = icegate_status
 
     if icegate_status == "ACCEPTED":
-
         pbe.status = "ICEGATE_ACCEPTED"
-
     elif icegate_status == "REJECTED":
-
         pbe.status = "ICEGATE_REJECTED"
-
-    # --------------------------------------------------------
-    # 9. Save
-    # --------------------------------------------------------
 
     db.commit()
     db.refresh(pbe)
 
-    # --------------------------------------------------------
-    # 10. Return
-    # --------------------------------------------------------
-
     return pbe
+
+
 # ------------------------------------------------------------
 # GET MY PBEs
 # ------------------------------------------------------------
@@ -1948,9 +2039,6 @@ def track_shipment_by_barcode(
         .all()
     ) if order else []
 
-    # --------------------------------------------------------
-    # DYNAMIC STATE DERIVATION
-    # --------------------------------------------------------
     # Milestone 1: PBE Filing & ICEGATE Customs Acceptance
     is_pbe_filed = pbe is not None
     is_icegate_accepted = pbe is not None and (
@@ -1998,9 +2086,6 @@ def track_shipment_by_barcode(
 
     destination_name = order.country if order else (pbe.country if pbe else "United States")
 
-    # --------------------------------------------------------
-    # CONSTRUCT 5 SEQUENTIAL TIMELINE MILESTONES
-    # --------------------------------------------------------
     events = []
 
     # 1. PBE Customs Filing Milestone
@@ -2101,9 +2186,6 @@ def track_shipment_by_barcode(
             status="ACTIVE" if has_intl_dispatch else "PENDING",
         ))
 
-    # --------------------------------------------------------
-    # DERIVE TOP-LEVEL CONSISTENT STATUS FIELDS
-    # --------------------------------------------------------
     derived_pbe_status = pbe.status if pbe else ("NOT_FILED" if not order else "PENDING")
     derived_icegate_status = pbe.icegate_status if pbe else ("NOT_SUBMITTED" if not order else "PENDING")
     derived_escrow_status = escrow.status if escrow else ("FUNDS_HELD_ESCROW" if has_postal_scan else "CREATED")
@@ -2304,7 +2386,6 @@ def mock_fpo_transfer(
     if pbe.buyer_id != current_user.id and pbe.seller_id != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="You are not allowed to update this shipment")
 
-    # Preceding state requirement: Must be dropped at DNK / handed over
     allowed_order_states = ["DROPPED_AT_DNK", "POSTAL_ACCEPTED", "FPO_TRANSFERRED", "LEO_GRANTED", "LEO_RELEASED", "INTERNATIONAL_DISPATCHED", "DELIVERED"]
     if order.status not in allowed_order_states:
         raise HTTPException(
@@ -2324,7 +2405,6 @@ def mock_fpo_transfer(
             "duplicate": True,
         }
 
-    # Record Shipping Event
     shipping_event = ShippingEvent(
         order_id=order.id,
         tracking_number=pbe.tracking_number,

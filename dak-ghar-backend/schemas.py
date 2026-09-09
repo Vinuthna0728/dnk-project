@@ -140,6 +140,8 @@ class EscrowTransition(BaseModel):
         "POSTAL_SCAN",
         "RELEASED_TO_SELLER_BANK",
     ]
+
+
 # ============================================================
 # PAYOUT SCHEMAS
 # ============================================================
@@ -160,6 +162,7 @@ class PayoutResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
 
 # ============================================================
 # COMPLIANCE SCHEMAS
@@ -279,6 +282,8 @@ class ShippingEventResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+
 # ============================================================
 # TRACKING SCHEMAS
 # ============================================================
@@ -288,7 +293,7 @@ class TrackingEventResponse(BaseModel):
     location: str
     description: str
     timestamp: str
-    status: str  # "COMPLETED" | "ACTIVE" | "PENDING"
+    status: str
 
 
 class TrackingDetailsResponse(BaseModel):
@@ -305,3 +310,21 @@ class TrackingDetailsResponse(BaseModel):
     cn23_pdf_url: str | None = None
     origin_facility: str = "DNK Belagavi (DNK-KA-BEL-01)"
     events: list[TrackingEventResponse] = []
+
+
+# ============================================================
+# EMAIL OTP SCHEMAS
+# ============================================================
+
+class SendOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+    status: str = "success"

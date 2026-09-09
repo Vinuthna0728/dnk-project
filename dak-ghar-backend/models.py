@@ -9,6 +9,7 @@ from sqlalchemy import (
     Numeric,
     Float,
     JSON,
+    Boolean,
 )
 
 from sqlalchemy.orm import (
@@ -54,9 +55,9 @@ class User(Base):
         nullable=True
     )
     upi_id: Mapped[str | None] = mapped_column(
-    String(100),
-    unique=True,
-    nullable=True,
+        String(100),
+        unique=True,
+        nullable=True,
     )
     password_hash: Mapped[str] = mapped_column(
         String(255),
@@ -249,6 +250,7 @@ class Escrow(Base):
         nullable=False
     )
 
+
 # ============================================================
 # PAYOUT
 # ============================================================
@@ -309,13 +311,15 @@ class Payout(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
-        nullable=False,
+        nullable=False
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
     )
+
+
 # ============================================================
 # COMPLIANCE / PBE
 # ============================================================
@@ -536,6 +540,47 @@ class ShippingEvent(Base):
     location: Mapped[str | None] = mapped_column(
         String(200),
         nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+
+# ============================================================
+# EMAIL OTP AUTHENTICATION
+# ============================================================
+
+class EmailOTP(Base):
+    __tablename__ = "email_otps"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True
+    )
+
+    email: Mapped[str] = mapped_column(
+        String(150),
+        index=True,
+        nullable=False
+    )
+
+    otp_code: Mapped[str] = mapped_column(
+        String(6),
+        nullable=False
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False
+    )
+
+    is_used: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
     )
 
     created_at: Mapped[datetime] = mapped_column(
