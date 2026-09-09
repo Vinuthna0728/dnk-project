@@ -1,0 +1,91 @@
+﻿{
+  version: 2.0.0,
+  tasks: [
+    {
+      label: Start All DNK Services (PowerShell),
+      type: shell,
+      command: powershell -ExecutionPolicy Bypass -File .\\start_all_services.ps1,
+      problemMatcher: [],
+      group: {
+        kind: build,
+        isDefault: true
+      },
+      presentation: {
+        reveal: always,
+        panel: new
+      }
+    },
+    {
+      label: Stop All DNK Services,
+      type: shell,
+      command: powershell -ExecutionPolicy Bypass -File .\\start_all_services.ps1 -StopOnly,
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: shared
+      }
+    },
+    {
+      label: Start Backend (:8000),
+      type: shell,
+      options: {
+        cwd: /dak-ghar-backend
+      },
+      command: powershell -Command "if (Test-Path .venv\\Scripts\\Activate.ps1) { .\\.venv\\Scripts\\Activate.ps1 }; uvicorn main:app --host 127.0.0.1 --port 8000 --reload",
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: new
+      }
+    },
+    {
+      label: Start AI Engine (:8001),
+      type: shell,
+      options: {
+        cwd: /dnk-ai-engine
+      },
+      command: powershell -Command "if (Test-Path .venv\\Scripts\\Activate.ps1) { .\\.venv\\Scripts\\Activate.ps1 }; uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload",
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: new
+      }
+    },
+    {
+      label: Start Buyer Storefront (:3000),
+      type: shell,
+      options: {
+        cwd: /DNK/dnk-buyer-storefront
+      },
+      command: npm run dev,
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: new
+      }
+    },
+    {
+      label: Start Artisan App (:8081),
+      type: shell,
+      options: {
+        cwd: /DNK/dnk-artisan-app
+      },
+      command: npx expo start --web --port 8081,
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: new
+      }
+    },
+    {
+      label: Run Master Integration Tests,
+      type: shell,
+      command: powershell -Command "if (Test-Path dak-ghar-backend\\.venv\\Scripts\\Activate.ps1) { .\\dak-ghar-backend\\.venv\\Scripts\\Activate.ps1 }; python test_master_integration.py",
+      problemMatcher: [],
+      presentation: {
+        reveal: always,
+        panel: shared
+      }
+    }
+  ]
+}

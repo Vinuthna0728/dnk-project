@@ -1,337 +1,281 @@
-# Dak Ghar Niryat Kendra (DNK) — Electronic Export & Customs Marketplace Platform
-
-> **Smart India Hackathon (SIH) Project**  
-> An end-to-end digital integration platform empowering rural Indian artisans to export authentic handcrafted goods globally through India Post, automated PBE-III / ICEGATE customs clearance, multimodal AI cataloging (Gemini Vision + Voice STT), and milestone-based escrow payouts.
+﻿# DAK GHAR NIRYAT KENDRA (DNK)
+### Smart India Hackathon 2026 — Omnichannel & Smart Cataloging Platform
 
 ---
 
-## 1. System Architecture
+## QUICK START — WINDOWS + VS CODE
 
-The DNK platform operates as a distributed microservice ecosystem:
-
-```mermaid
-graph TD
-    subgraph Client Apps
-        ArtisanApp["🎨 Artisan App (Expo / React Native) :8081"]
-        BuyerStore["🛍️ Buyer Storefront (Next.js 14) :3000"]
-    end
-
-    subgraph Core Backend
-        BackendAPI["⚡ Core Backend API (FastAPI) :8000"]
-        PostgresDB[("🐘 PostgreSQL Database :5432 / :5433")]
-    end
-
-    subgraph Intelligence & Services
-        AIEngine["🤖 DNK AI Engine (FastAPI) :8001"]
-        GeminiAPI["✨ Google Gemini 3.6 Flash"]
-        QdrantDB["📦 Vector HS-Code Index (SentenceTransformers)"]
-        StripeGateway["💳 Stripe Payment Gateway"]
-        MockICEGATE["🏛️ ICEGATE / Customs PBE Gateway"]
-    end
-
-    ArtisanApp -->|REST / JWT| BackendAPI
-    BuyerStore -->|REST / JSON| BackendAPI
-    BackendAPI -->|SQLAlchemy ORM| PostgresDB
-    BackendAPI -->|Multimodal Ingestion| AIEngine
-    AIEngine -->|Vision & Voice STT| GeminiAPI
-    AIEngine -->|8-digit ITC-HS Match| QdrantDB
-    BuyerStore -->|Checkout Redirect| StripeGateway
-    BackendAPI -->|PBE-III Electronic Filing| MockICEGATE
-```
-
----
-
-## 2. Technology Stack
-
-| Layer | Technologies Used |
-|---|---|
-| **Core Backend API** | Python 3.10+, FastAPI, SQLAlchemy 2.0, PostgreSQL, Pydantic v2, Python-Jose (JWT), ReportLab (CN-23 PDF Generator), Stripe SDK |
-| **AI Intelligence Engine** | Python 3.10+, FastAPI, Google GenAI SDK (`gemini-3.6-flash`), Sentence-Transformers (`all-MiniLM-L6-v2`), Qdrant Client, NumPy, PyTorch |
-| **Buyer Storefront** | Next.js 14 (App Router), React 18, TailwindCSS, Framer Motion, Lucide Icons, Zustand State Management |
-| **Artisan Mobile & Web App** | React Native, Expo 57, Expo AV (Voice Recording), Expo Camera/ImagePicker, NativeWind / TailwindCSS, Zustand |
-| **Database & Vector Store** | PostgreSQL 14+, Qdrant Vector Engine (with local vector similarity fallback) |
-| **Logistics & Customs** | Electronic PBE-III filing format, CBIC Foreign Post Office (FPO) integration, automated Let Export Order (LEO) workflow |
-
----
-
-## 3. Repository Structure
-
-```text
-dnk-project/
-├── dak-ghar-backend/              # Core FastAPI Backend API (Port 8000)
-│   ├── main.py                    # API routes, auth, products, orders, escrow, tracking
-│   ├── models.py                  # SQLAlchemy Database Models (Users, Products, Orders, Escrow, PBE)
-│   ├── schemas.py                 # Pydantic validation schemas
-│   ├── database.py                # Database connection & session factory
-│   ├── auth.py                    # JWT token creation & password hashing
-│   ├── icegate.py                 # Mock ICEGATE customs filing router
-│   ├── cn23_generator.py          # Automated CN-23 Customs Declaration PDF engine
-│   ├── ai_engine.py               # Microservice client proxying AI requests to port 8001
-│   ├── create_tables.py           # Table initialization script
-│   ├── create_test_user.py        # Seed default test seller account
-│   ├── requirements.txt           # Python backend dependencies
-│   └── .env.example               # Backend environment template
-│
-├── dnk-ai-engine/                 # AI Engine Microservice (Port 8001)
-│   ├── app/
-│   │   ├── main.py                # FastAPI app entry & health endpoints
-│   │   ├── core/                  # Gemini & Qdrant configuration
-│   │   ├── services/
-│   │   │   ├── catalog_service.py # Multimodal catalog synthesis & keyword extraction
-│   │   │   ├── speech_service.py  # Voice speech-to-text transcription engine
-│   │   │   └── hscode_service.py  # 8-digit ITC-HS Code vector matching
-│   │   └── api/v1/endpoints/      # Endpoints for transcribe, vision, and cataloging
-│   ├── requirements.txt           # AI engine dependencies
-│   └── .env.example               # AI Engine environment template
-│
-├── DNK/
-│   ├── dnk-buyer-storefront/      # Next.js 14 E-Commerce Marketplace (Port 3000)
-│   │   ├── app/                   # App Router pages (Home, Products, Checkout, Tracking)
-│   │   ├── components/            # Reusable UI components
-│   │   ├── context/               # Cart and Currency contexts
-│   │   ├── package.json           # Next.js dependencies
-│   │   └── .env.local.example     # Frontend environment template
-│   │
-│   └── dnk-artisan-app/           # Expo Web & Mobile Artisan App (Port 8081)
-│       ├── app/                   # Expo Router screens (Voice Catalog, Products, Orders, Payouts)
-│       ├── components/            # PermanentSidebar, CameraModal, DropOffModal
-│       ├── services/api.ts        # API client for backend authentication & catalog creation
-│       ├── store/                 # Zustand multi-language and profile store
-│       ├── package.json           # Expo dependencies
-│       └── .env.example           # Artisan app environment template
-│
-├── start_all_services.ps1         # Windows PowerShell Master Startup Script
-├── start_all_services.sh          # Linux/macOS Bash Master Startup Script
-├── test_master_integration.py     # Master 10-module automated end-to-end test suite
-├── .env.example                   # Master environment template
-├── .gitignore                     # Git ignore rules protecting credentials & builds
-└── README.md                      # Complete system documentation
-```
-
----
-
-## 4. Prerequisites
-
-Before running the project on a new system, ensure the following are installed:
-
-1. **Node.js**: v18.17.0 or higher ([Download Node.js](https://nodejs.org/))
-2. **Python**: v3.10, v3.11, or v3.12 ([Download Python](https://www.python.org/))
-3. **PostgreSQL**: v14+ active on port 5432 or 5433 ([Download PostgreSQL](https://www.postgresql.org/))
-4. **Google Gemini API Key**: Free tier API key from [Google AI Studio](https://aistudio.google.com/)
-
----
-
-## 5. Quick Start (Run Everything with 1 Command)
+Follow these 10 steps to set up and run the entire DNK ecosystem from scratch in Visual Studio Code on Windows:
 
 ### Step 1: Clone the Repository
-```bash
+`powershell
 git clone <YOUR_GITHUB_REPO_URL>
 cd dnk-project
-```
+`
 
-### Step 2: Configure Environment Files
-Copy the template files to create your active `.env` configurations:
+### Step 2: Open Folder in VS Code
+`powershell
+code .
+`
+*(Or open VS Code and use File -> Open Folder... -> select D:\dnk-project)*
 
-```bash
-# Backend configuration
-cp dak-ghar-backend/.env.example dak-ghar-backend/.env
+### Step 3: Configure Environment (.env) Files
+Copy each .env.example template to create your local .env configuration files:
+`powershell
+# Core Backend
+Copy-Item dak-ghar-backend\.env.example dak-ghar-backend\.env
 
-# AI Engine configuration
-cp dnk-ai-engine/.env.example dnk-ai-engine/.env
+# AI Engine
+Copy-Item dnk-ai-engine\.env.example dnk-ai-engine\.env
 
-# Buyer Storefront configuration
-cp DNK/dnk-buyer-storefront/.env.local.example DNK/dnk-buyer-storefront/.env.local
+# Buyer Storefront
+Copy-Item DNK\dnk-buyer-storefront\.env.local.example DNK\dnk-buyer-storefront\.env.local
 
-# Artisan App configuration
-cp DNK/dnk-artisan-app/.env.example DNK/dnk-artisan-app/.env
-```
+# Artisan App
+Copy-Item DNK\dnk-artisan-app\.env.example DNK\dnk-artisan-app\.env
+`
+> **Note:** Open dnk-ai-engine\.env and paste your GEMINI_API_KEY from [Google AI Studio](https://aistudio.google.com/).
+> In dak-ghar-backend\.env, verify DATABASE_URL matches your local PostgreSQL instance (default: postgresql+psycopg2://postgres:password@localhost:5432/dak_ghar).
 
-> **Important:** Open `dnk-ai-engine/.env` and paste your `GEMINI_API_KEY`.  
-> Open `dak-ghar-backend/.env` and adjust your PostgreSQL credentials if needed.
-
-### Step 3: Launch All 4 Services
-**On Windows (PowerShell):**
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start_all_services.ps1
-```
-
-**On Linux / macOS (Bash):**
-```bash
-chmod +x start_all_services.sh
-./start_all_services.sh
-```
-
----
-
-## 6. Manual Setup & Individual Service Startup
-
-If you prefer to start services individually in separate terminals:
-
-### 1. Database Setup (PostgreSQL)
-Ensure PostgreSQL is running, then create the database:
-```sql
-CREATE DATABASE dak_ghar;
-```
-
-### 2. Core Backend Setup (Port 8000)
-```bash
+### Step 4: Install Backend Dependencies
+Open a PowerShell terminal in VS Code:
+`powershell
 cd dak-ghar-backend
 python -m venv .venv
-
-# Activate virtual environment
-# Windows:
 .\.venv\Scripts\Activate.ps1
-# Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
+cd ..
+`
 
-# Initialize database tables and test user
-python create_tables.py
-python create_test_user.py
-
-# Start Backend Server
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### 3. AI Engine Setup (Port 8001)
-```bash
+### Step 5: Install AI Engine Dependencies
+`powershell
 cd dnk-ai-engine
 python -m venv .venv
-
-# Activate virtual environment
-# Windows:
 .\.venv\Scripts\Activate.ps1
-# Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
+cd ..
+`
 
-# Start AI Engine Server
+### Step 6: Install Artisan App Dependencies
+`powershell
+cd DNK\dnk-artisan-app
+npm install
+cd ..\..
+`
+
+### Step 7: Install Buyer Storefront Dependencies
+`powershell
+cd DNK\dnk-buyer-storefront
+npm install
+cd ..\..
+`
+
+### Step 8: Run Database Initialization & Migrations
+In the backend virtual environment:
+`powershell
+cd dak-ghar-backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+python create_tables.py
+python create_test_user.py
+cd ..
+`
+
+### Step 9: Launch All 4 Services (One Command)
+Run the master PowerShell startup script:
+`powershell
+powershell -ExecutionPolicy Bypass -File .\start_all_services.ps1
+`
+
+### Step 10: Access Live Applications
+* **Artisan App (Web):** [http://localhost:8081](http://localhost:8081)
+* **Buyer Storefront:** [http://localhost:3000](http://localhost:3000)
+  * D2C Shop: [http://localhost:3000/shop](http://localhost:3000/shop)
+  * B2B Wholesale: [http://localhost:3000/b2b](http://localhost:3000/b2b)
+  * Dwara Export Gateway: [http://localhost:3000/dwara](http://localhost:3000/dwara)
+* **Core Backend API (Swagger Docs):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+* **AI Engine API (Swagger Docs):** [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)
+
+---
+
+## 1. System Architecture & Designated Ports
+
+`
+                       ┌──────────────────────────────┐
+                       │   ARTISAN APP (:8081)        │
+                       │   React Native / Expo Web    │
+                       └──────────────┬───────────────┘
+                                      │
+                   ┌──────────────────┴──────────────────┐
+                   │ (Voice/Audio/Image)                 │ (Auth / Products /
+                   ▼                                     │  Orders / Payouts)
+        ┌─────────────────────┐                          │
+        │  AI ENGINE (:8001)  │                          ▼
+        │  • Gemini STT       │                ┌─────────────────────┐
+        │  • Rembg Vision     │                │ BACKEND API (:8000) │
+        │  • ITC-HS & CITES   │                │ • FastAPI / JWT     │
+        │  • Wage Heuristics  │◄───────────────┤ • Pexels Proxy      │
+        └─────────────────────┘ (Proxy / Check)│ • Logistics Code-128│
+                                               │ • Customs CN22/PBE  │
+                                               └──────────┬──────────┘
+                                                          │
+                   ┌──────────────────────────────────────┼────────────────────────┐
+                   │                                      │                        │
+                   ▼                                      ▼                        ▼
+        ┌─────────────────────┐                ┌─────────────────────┐  ┌─────────────────────┐
+        │ PostgreSQL Database │                │ BUYER STOREFRONT    │  │ INDIA POST LOGISTICS│
+        │ Products, Orders,   │                │ (:3000)             │  │ 4x6 Label & Code-128│
+        │ Escrow, Tracking    │                │ /shop  /b2b  /dwara │  │ Barcode & Tracking  │
+        └─────────────────────┘                └─────────────────────┘  └─────────────────────┘
+`
+
+| Microservice | Port | Tech Stack | Root Directory |
+|---|---|---|---|
+| **Core Backend** | 8000 | FastAPI, Python 3.10-3.12, SQLAlchemy, PostgreSQL, ReportLab | dak-ghar-backend/ |
+| **AI Engine** | 8001 | FastAPI, Google GenAI SDK (google.genai), Rembg, ONNX Runtime | dnk-ai-engine/ |
+| **Buyer Storefront** | 3000 | Next.js 14 App Router, React 18, TailwindCSS, TypeScript | DNK/dnk-buyer-storefront/ |
+| **Artisan App** | 8081 | React Native, Expo 51+, Expo Router, TypeScript | DNK/dnk-artisan-app/ |
+
+---
+
+## 2. Prerequisites
+
+Ensure the following tools are installed on your host system:
+
+1. **Python**: Version 3.10.x, 3.11.x, or 3.12.x ([python.org](https://www.python.org/))
+2. **Node.js**: Version 18.17.0 or higher (Recommended: LTS 20.x) ([nodejs.org](https://nodejs.org/))
+3. **npm**: Version 9.x or higher (bundled with Node.js)
+4. **PostgreSQL**: Version 14 or higher (Default port: 5432 or 5433)
+5. **Git**: Version 2.30+ ([git-scm.com](https://git-scm.com/))
+6. **Google Gemini API Key**: Free API key from [Google AI Studio](https://aistudio.google.com/)
+
+---
+
+## 3. Individual Service Startup (4 Separate Terminals)
+
+If debugging or running individual services in separate VS Code terminals:
+
+### Terminal 1: Core Backend (:8000)
+`powershell
+cd dak-ghar-backend
+.\.venv\Scripts\Activate.ps1
+uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+`
+
+### Terminal 2: AI Engine (:8001)
+`powershell
+cd dnk-ai-engine
+.\.venv\Scripts\Activate.ps1
 uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
-```
+`
 
-### 4. Buyer Storefront Setup (Port 3000)
-```bash
-cd DNK/dnk-buyer-storefront
-npm install
+### Terminal 3: Buyer Storefront (:3000)
+`powershell
+cd DNK\dnk-buyer-storefront
 npm run dev
-```
-Open **`http://localhost:3000`** in your browser.
+`
 
-### 5. Artisan Mobile & Web App Setup (Port 8081)
-```bash
-cd DNK/dnk-artisan-app
-npm install
-npx expo start
-```
-Press **`w`** in the terminal to open the web version in your browser at **`http://localhost:8081`**.
+### Terminal 4: Artisan Client (:8081)
+`powershell
+cd DNK\dnk-artisan-app
+npx expo start --web --port 8081
+`
 
 ---
 
-## 7. Environment Variables Reference
+## 4. VS Code Tasks & Debugging Support
 
-### `dak-ghar-backend/.env`
-| Variable | Description | Example |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL SQLAlchemy connection URL | `postgresql+psycopg2://postgres:password@localhost:5432/dak_ghar` |
-| `SECRET_KEY` | 256-bit secret for signing JWT tokens | `random_secret_string_32_chars` |
-| `AI_ENGINE_URL` | Microservice URL for the AI Engine | `http://127.0.0.1:8001` |
-| `STRIPE_SECRET_KEY` | Stripe Test API Secret Key | `sk_test_51U5...` |
+The repository includes pre-configured VS Code tasks and launch configurations in .vscode/:
 
-### `dnk-ai-engine/.env`
-| Variable | Description | Example |
-|---|---|---|
-| `GEMINI_API_KEY` | Google Gemini API Key | `AIzaSy...` |
-| `GEMINI_MODEL` | Gemini Model Identifier | `gemini-3.6-flash` |
-| `QDRANT_HOST` | Vector DB Host (optional) | `localhost` |
-| `QDRANT_PORT` | Vector DB Port (optional) | `6333` |
-
-### `DNK/dnk-buyer-storefront/.env.local`
-| Variable | Description | Example |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | Core Backend API Base URL | `http://localhost:8000` |
-
-### `DNK/dnk-artisan-app/.env`
-| Variable | Description | Example |
-|---|---|---|
-| `EXPO_PUBLIC_API_URL` | Core Backend API Base URL | `http://localhost:8000` |
+### Running Tasks (Ctrl+Shift+B or Terminal -> Run Task...):
+* **Start All DNK Services (PowerShell)**: Runs the master startup script.
+* **Stop All DNK Services**: Gracefully releases ports 8000, 8001, 3000, and 8081.
+* **Start Backend (:8000)**: Launches backend in a dedicated VS Code terminal.
+* **Start AI Engine (:8001)**: Launches AI Engine in a dedicated terminal.
+* **Start Buyer Storefront (:3000)**: Launches Next.js dev server.
+* **Start Artisan App (:8081)**: Launches Expo web bundler.
+* **Run Master Integration Tests**: Executes the complete 10-module integration test suite.
 
 ---
 
-## 8. Test Accounts & Credentials
+## 5. Environment Variables Reference
 
-For immediate testing, default accounts are pre-seeded in the database:
+### dak-ghar-backend/.env
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| DATABASE_URL | Yes | PostgreSQL connection string | postgresql+psycopg2://postgres:password@localhost:5432/dak_ghar |
+| SECRET_KEY | Yes | 256-bit secret key for signing JWT tokens |
+andom_secret_32_characters |
+| AI_ENGINE_URL | Yes | AI Engine base URL | http://127.0.0.1:8001 |
+| PEXELS_API_KEY | Optional | Pexels API key for visual fallbacks | your_pexels_api_key |
+| STRIPE_SECRET_KEY| Optional | Stripe Test Secret Key | sk_test_placeholder |
 
-| Role | Username / Email | Password |
-|---|---|---|
-| **Artisan / Seller** | `seller@dakghar.local` | `DakGhar@123` |
-| **New Artisan** | Register directly via Artisan App UI | Any password |
-| **Buyer** | Auto-registered during checkout | Dynamic checkout session |
+### dnk-ai-engine/.env
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| GEMINI_API_KEY | Yes | Google Gemini API Key | AIzaSy... |
+| GEMINI_MODEL | Optional | Default Gemini model | gemini-3.1-flash-lite |
+| QDRANT_HOST | Optional | Qdrant vector database host | localhost |
+| QDRANT_PORT | Optional | Qdrant port (fallback active if offline) | 6333 |
+
+### DNK/dnk-buyer-storefront/.env.local
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| NEXT_PUBLIC_API_BASE_URL | Yes | Backend API base URL | http://localhost:8000 |
+| NEXT_PUBLIC_API_URL | Yes | Backend API base URL alias | http://localhost:8000 |
+
+### DNK/dnk-artisan-app/.env
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| EXPO_PUBLIC_API_URL | Yes | Backend API base URL | http://localhost:8000 |
+| EXPO_PUBLIC_DEMO_MODE | Optional | Preset demo credentials | 	rue |
 
 ---
 
-## 9. Automated Testing & Verification
+## 6. External Services & Fallback Architecture
 
-Run the master integration test suite to verify that all 10 modules work end-to-end:
+| External Service | Role | Live vs. Fallback Behavior |
+|---|---|---|
+| **Google Gemini AI** | Multilingual Voice STT & AI Cataloging | **Live**: Real-time Gemini 1.5/3.1 STT. **Fallback**: Graceful model cascade and text mode. |
+| **Pexels API** | High-resolution handicraft imagery | **Live**: Curated Indian artisan photos. **Fallback**: Deterministic local handicraft assets. |
+| **Qdrant Vector DB** | 8-digit ITC-HS Code matching | **Live**: Vector search. **Fallback**: Curated fuzzy keyword classification (itc_hs_codes.json). |
+| **India Post Core API** | Parcel tracking & postal counters | **Simulated Demo Mode**: Realistic 4-milestone event lifecycle (BOOKED $\rightarrow$ DELIVERED). |
+| **ICEGATE Customs** | Postal Bill of Export (PBE-III) | **Simulated Demo Mode**: PDF generation and automated customs clearance verification. |
 
-```bash
-# Run from repository root with backend and AI engine active:
+---
+
+## 7. Troubleshooting
+
+| Symptom | Cause | Safe Solution |
+|---|---|---|
+| **WinError 10048 / 10013 (Port in use)** | Background process holding port 8000, 8001, 3000, or 8081 | Run powershell -ExecutionPolicy Bypass -File .\start_all_services.ps1 -StopOnly to free ports. |
+| **AI Engine HTTP 500 / 400** | GEMINI_API_KEY missing or expired in dnk-ai-engine/.env | Verify key in [Google AI Studio](https://aistudio.google.com/) and update dnk-ai-engine/.env. |
+| **Database connection failed** | PostgreSQL server not started or invalid password | Verify PostgreSQL is running on port 5432 and update DATABASE_URL in dak-ghar-backend/.env. |
+| **Next.js image / network error** | Backend not running on port 8000 | Ensure backend is active at http://127.0.0.1:8000/docs. |
+| **Expo Metro Bundler not responding** | Port 8081 conflict | Run
+px expo start --web --port 8081 --clear in DNK/dnk-artisan-app. |
+
+---
+
+## 8. Master Integration Test Execution
+
+To verify the entire 10-module end-to-end integration:
+
+`powershell
+cd dak-ghar-backend
+.\.venv\Scripts\Activate.ps1
+cd ..
 python test_master_integration.py
-```
+`
 
-### Verified Test Modules:
-1. **[PASS] Microservices Health Probes:** Validates `/` (Backend) and `/health` + `/api/v1/health` (AI Engine).
-2. **[PASS] Artisan Authentication Lifecycle:** Tests Registration, Login, JWT session tokens, and protected `/me` endpoints.
-3. **[PASS] Product Creation & Scoping:** Verifies product listing and isolation per artisan ID.
-4. **[PASS] Duplicate Prevention Engine:** Validates HTTP 409 Conflict rejection for duplicate product submissions.
-5. **[PASS] AI Vision Multimodal Engine:** Multimodal product image identification and 8-digit ITC-HS Code matching.
-6. **[PASS] AI Voice STT & Multimodal Pipeline:** Tests combined audio speech-to-text narrative + image feature extraction.
-7. **[PASS] Order & Escrow Initialization:** Validates order placement and automated escrow creation.
-8. **[PASS] Customs PBE-III ICEGATE Acceptance:** Tests electronic PBE generation and mock ICEGATE customs acceptance.
-9. **[PASS] Escrow Vault & Ledger:** Validates held escrow funds for active orders.
-10. **[PASS] Logistics & Customs Tracking:** Tests parcel tracking lifecycle across Postal Intake, Customs LEO, Air Mail Hub, and Destination Handover.
-
----
-
-## 10. API Documentation (Interactive Swagger / OpenAPI)
-
-Interactive OpenAPI documentation is generated automatically for all endpoints:
-
-* **Core Backend API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-* **AI Engine API Docs:** [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)
-
----
-
-## 11. Troubleshooting
-
-| Issue | Cause | Solution |
-|---|---|---|
-| **`[WinError 10013]` / `Port in use`** | A previously running instance is holding port 8000 or 8001 | Run `powershell -ExecutionPolicy Bypass -File .\start_all_services.ps1 -StopOnly` to free ports. |
-| **`AI Engine returned HTTP 500 / 400`** | Missing or invalid `GEMINI_API_KEY` in `dnk-ai-engine/.env` | Verify your API key at [Google AI Studio](https://aistudio.google.com/) and set `GEMINI_MODEL=gemini-3.6-flash`. |
-| **`Database connection failed`** | PostgreSQL service is stopped or invalid credentials | Check PostgreSQL status and update `DATABASE_URL` in `dak-ghar-backend/.env`. |
-| **`Next.js image / network error`** | Backend not running on port 8000 | Verify backend is up at `http://127.0.0.1:8000/`. |
-| **`CORS error in browser console`** | Frontend origin blocked | Both `dak-ghar-backend` and `dnk-ai-engine` include permissive CORS middleware for development ports. |
-
----
-
-## 12. Team Development Workflow
-
-```bash
-# 1. Clone your fork or branch
-git clone <REPO_URL>
-cd dnk-project
-
-# 2. Create your feature branch
-git checkout -b feature/your-feature-name
-
-# 3. Make changes and verify all tests pass
-python test_master_integration.py
-
-# 4. Commit and push
-git add .
-git commit -m "feat: description of your improvement"
-git push origin feature/your-feature-name
-```
+### Verified Modules:
+1. [PASS] Microservices Health Probes (Backend :8000 & AI Engine :8001)
+2. [PASS] Artisan Passwordless Authentication (OTP & JWT Lifecycle)
+3. [PASS] Product Creation & Artisan Scoping
+4. [PASS] Duplicate Product Prevention Engine
+5. [PASS] AI Vision Multimodal Studio & ITC-HS Code Matching
+6. [PASS] AI Voice STT & Multimodal Cataloging Pipeline
+7. [PASS] Order & Escrow Account Initialization
+8. [PASS] Customs PBE-III ICEGATE Acceptance
+9. [PASS] Escrow Vault & IPPB Savings Ledger
+10. [PASS] India Post Postal Tracking & Milestone Progression
