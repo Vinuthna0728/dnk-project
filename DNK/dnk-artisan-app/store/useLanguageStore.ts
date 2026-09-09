@@ -10,6 +10,19 @@ import { APP_CONFIG, SUPPORTED_LANGUAGES } from '../constants/Config';
 
 export type SupportedLanguage = 'hi' | 'kn' | 'ta' | 'bn' | 'en';
 
+export interface ProductItem {
+  id: string;
+  title: Record<string, string>;
+  description: Record<string, string>;
+  category: string;
+  hsCode: string;
+  weight: string;
+  priceInr: number;
+  imageUri: string;
+  status: 'ACTIVE_EXPORT' | 'DRAFT';
+}
+
+
 interface LanguageState {
   currentLang: SupportedLanguage;
   isSpeaking: boolean;
@@ -18,6 +31,9 @@ interface LanguageState {
   t: (key: string) => string;
   speakText: (text: string) => Promise<void>;
   stopSpeaking: () => Promise<void>;
+  products: ProductItem[];
+  addProduct: (product: ProductItem) => { success: boolean; error?: string };
+  deleteProduct: (id: string) => void;
 }
 
 const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
@@ -971,6 +987,17 @@ export const useLanguageStore = create<LanguageState>((set, get) => ({
     } else {
       console.log(`[Audio Narration] (${lang}): ${text}`);
     }
+  },
+
+  products: [],
+
+  addProduct: (product: ProductItem) => {
+    set((state) => ({ products: [product, ...state.products] }));
+    return { success: true };
+  },
+
+  deleteProduct: (id: string) => {
+    set((state) => ({ products: state.products.filter((p) => p.id !== id) }));
   },
 
   stopSpeaking: async () => {

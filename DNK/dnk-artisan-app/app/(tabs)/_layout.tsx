@@ -112,6 +112,12 @@ export default function TabLayout() {
 
           {/* Root Tab Redirect */}
           <Tabs.Screen
+            name="voice-catalog"
+            options={{
+              href: null,
+            }}
+          />
+          <Tabs.Screen
             name="index"
             options={{
               href: null,

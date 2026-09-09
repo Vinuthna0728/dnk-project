@@ -1,3 +1,4 @@
+from services.pexels_service import search_pexels_image
 import re
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -360,6 +361,16 @@ def get_public_products(
     return result
 
 
+
+
+@app.get("/api/pexels/search")
+async def pexels_search(query: str):
+    image = await search_pexels_image(query)
+
+    return {
+        "query": query,
+        "image": image,
+    }
 
 # ------------------------------------------------------------
 # CREATE PRODUCT

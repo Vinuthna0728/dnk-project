@@ -173,3 +173,77 @@ export default {
   normalizeApiError,
   apiRequest,
 };
+
+// ============================================================
+// AI CATALOG & VOICE API (Dev 4 Integration)
+// ============================================================
+
+export interface AICatalogResponse {
+  product_title_en?: string;
+  product_description_en?: string;
+  translated_title_local?: string;
+  hs_code?: string;
+  hs_code_confidence?: number;
+  category?: string;
+  key_features?: string[];
+  suggested_tags?: string[];
+  [key: string]: any;
+}
+
+export async function generateAICatalogFromText(
+  rawText: string,
+  sourceLanguage: string = 'auto',
+  imageBase64?: string,
+  imageMimeType: string = 'image/jpeg'
+): Promise<AICatalogResponse> {
+  const payload: Record<string, any> = {
+    raw_text: rawText || '',
+    source_language: sourceLanguage || 'auto',
+  };
+
+  if (imageBase64) {
+    payload.image_base64 = imageBase64;
+    payload.image_mime_type = imageMimeType || 'image/jpeg';
+  }
+
+  return apiRequest<AICatalogResponse>(
+    'POST',
+    '/api/v1/ai/catalog/generate',
+    payload
+  );
+}
+
+export async function generateAICatalogFromVoice(
+  formData: FormData
+): Promise<AICatalogResponse> {
+  return apiRequest<AICatalogResponse>(
+    'POST',
+    '/api/v1/artisan/voice-upload',
+    formData,
+    true
+  );
+}
+
+export async function createProduct(
+  data: any
+): Promise<any> {
+  if (data.channels && data.pricing && data.logistics) {
+    return apiRequest<any>('POST', '/api/v1/products', data);
+  }
+
+  const payload = {
+    title: data.title || 'Artisan Product',
+    title_en: data.title_en || data.title || 'Artisan Product',
+    title_hi: data.title_hi || data.title || 'Artisan Product',
+    description: data.description || '',
+    description_en: data.description_en || data.description || '',
+    description_hi: data.description_hi || data.description || '',
+    price_inr: data.price_inr || data.pricing?.retail_price_inr || 1000,
+    category: data.category || 'Handicrafts',
+    hs_code: data.hs_code || data.hsCode || '6913.90.00',
+    hs_confidence: data.hs_confidence || data.hsCodeConfidence || 0.9,
+    image_urls: data.image_urls || (data.imageUri ? [data.imageUri] : []),
+  };
+
+  return apiRequest<any>('POST', '/api/v1/products', payload);
+}
